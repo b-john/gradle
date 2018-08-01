@@ -91,11 +91,16 @@ public class SelectorStateResolver<T extends ComponentResolutionState> {
     private List<T> buildResolveResults(List<? extends ResolvableSelectorState> selectors, VersionSelector allRejects) {
         SelectorStateResolverResults results = new SelectorStateResolverResults(selectors.size());
         boolean hasResolution = false;
+        List<ResolvableSelectorState> preferSelectors = Lists.newArrayList();
         for (ResolvableSelectorState selector : selectors) {
             // If this selector doesn't specify a prefer/require version, then ignore it here.
             // This will avoid resolving 'reject' selectors, too.
             if (isEmpty(selector)) {
                 selector.markResolved();
+                continue;
+            }
+            if (isPrefer(selector)) {
+                preferSelectors.add(selector);
                 continue;
             }
 
@@ -108,8 +113,39 @@ public class SelectorStateResolver<T extends ComponentResolutionState> {
             // Need to perform the actual resolve
             ComponentIdResolveResult resolved = selector.resolve(allRejects);
 
-            results.registerResolution(selector, resolved);
+            results.registerResolution(selector, resolved, false);
             hasResolution = true;
+        }
+
+        if (!hasResolution) {
+            for (ResolvableSelectorState selector : preferSelectors) {
+
+                // Check already resolved results for a compatible version, and use it for this dependency rather than re-resolving.
+                if (results.alreadyHaveResolution(selector)) {
+                    selector.markResolved();
+                    continue;
+                }
+
+                // Need to perform the actual resolve
+                ComponentIdResolveResult resolved = selector.resolve(allRejects);
+
+                results.registerResolution(selector, resolved, false);
+                hasResolution = true;
+            }
+        } else {
+            for (ResolvableSelectorState selector : preferSelectors) {
+
+                // Check already resolved results for a compatible version, and use it for this dependency rather than re-resolving.
+                if (results.alreadyHaveResolution(selector)) {
+                    selector.markResolved();
+                    continue;
+                }
+
+                // Need to perform the actual resolve
+                ComponentIdResolveResult resolved = selector.resolve(allRejects);
+
+                results.registerResolution(selector, resolved, true);
+            }
         }
 
         if (!hasResolution) {
@@ -126,6 +162,10 @@ public class SelectorStateResolver<T extends ComponentResolutionState> {
             return versionConstraint.getPreferredSelector().getSelector().isEmpty();
         }
         return false;
+    }
+
+    private boolean isPrefer(ResolvableSelectorState selector) {
+        return selector.getVersionConstraint() != null && selector.getVersionConstraint().isPrefer();
     }
 
     private VersionSelector createAllRejects(List<? extends ResolvableSelectorState> selectors) {

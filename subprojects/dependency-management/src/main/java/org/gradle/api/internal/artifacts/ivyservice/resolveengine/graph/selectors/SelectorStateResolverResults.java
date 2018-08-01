@@ -17,6 +17,10 @@ package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.selecto
 
 import com.google.common.collect.Lists;
 import org.gradle.api.internal.artifacts.ResolvedVersionConstraint;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.DefaultVersionComparator;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.Version;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionComparator;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionParser;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelector;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.ComponentResolutionState;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons;
@@ -93,22 +97,49 @@ class SelectorStateResolverResults {
         return false;
     }
 
-    void registerResolution(ResolvableSelectorState dep, ComponentIdResolveResult resolveResult) {
+    void registerResolution(ResolvableSelectorState dep, ComponentIdResolveResult resolveResult, boolean preferred) {
         if (resolveResult.getFailure() != null) {
             results.add(new Registration(dep, resolveResult));
             return;
         }
 
-        // Check already-resolved dependencies and use this version if it's compatible
-        for (Registration registration : results) {
-            ResolvableSelectorState other = registration.selector;
-            if (included(other, resolveResult)) {
-                registration.result = resolveResult;
+        if (preferred) {
+            // Check already-resolved dependencies and use this version if it's compatible
+            for (Registration registration : results) {
+                ResolvableSelectorState other = registration.selector;
+                if (included(other, resolveResult)) {
+                    if (registration.preferred) {
+                        ComponentIdResolveResult bestResult = chooseBest(registration.result, resolveResult);
+                        registration.result = bestResult;
+                    } else {
+                        registration.result = resolveResult;
+                        registration.preferred = true;
+                    }
+                }
             }
-        }
+        } else {
+            // Check already-resolved dependencies and use this version if it's compatible
+            for (Registration registration : results) {
+                ResolvableSelectorState other = registration.selector;
+                if (included(other, resolveResult)) {
+                    registration.result = resolveResult;
+                }
+            }
 
-        results.add(new Registration(dep, resolveResult));
+            results.add(new Registration(dep, resolveResult));
+        }
     }
+
+    private ComponentIdResolveResult chooseBest(ComponentIdResolveResult one, ComponentIdResolveResult two) {
+        VersionComparator vc = new DefaultVersionComparator();
+        VersionParser vp = new VersionParser();
+
+        Version v1 = vp.transform(one.getModuleVersionId().getVersion());
+        Version v2 = vp.transform(two.getModuleVersionId().getVersion());
+
+        return vc.asVersionComparator().compare(v1, v2) < 0 ? two : one;
+    }
+
 
     private boolean included(ResolvableSelectorState dep, ComponentIdResolveResult candidate) {
         if (candidate.getFailure() != null) {
@@ -128,6 +159,7 @@ class SelectorStateResolverResults {
     private static class Registration {
         private final ResolvableSelectorState selector;
         private ComponentIdResolveResult result;
+        public boolean preferred = false;
 
         private Registration(ResolvableSelectorState selector, ComponentIdResolveResult result) {
             this.selector = selector;

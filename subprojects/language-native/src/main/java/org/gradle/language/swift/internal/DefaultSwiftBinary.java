@@ -105,14 +105,14 @@ public class DefaultSwiftBinary extends DefaultNativeBinary implements SwiftBina
         nativeLink.getAttributes().attribute(OPTIMIZED_ATTRIBUTE, identity.isOptimized());
         nativeLink.getAttributes().attribute(OperatingSystemFamily.OPERATING_SYSTEM_ATTRIBUTE, identity.getOperatingSystemFamily());
 
-        Configuration nativeDirectLink = configurations.create(names.withPrefix("nativeDirectLink
-        nativeDirectLink.extendsFrom(getImplementationDependencies());
-        nativeDirectLink.setCanBeConsumed(false);
-        nativeDirectLink.getAttributes().attribute(Usage.USAGE_ATTRIBUTE, objectFactory.named(Usa
-        nativeDirectLink.getAttributes().attribute(DEBUGGABLE_ATTRIBUTE, identity.isDebuggable())
-        nativeDirectLink.getAttributes().attribute(OPTIMIZED_ATTRIBUTE, identity.isOptimized());
+        Configuration nativeDirectLink = configurations.create(names.withPrefix("nativeDirectLink"));
+        nativeLink.extendsFrom(getImplementationDependencies());
+        nativeLink.setCanBeConsumed(false);
+        nativeLink.getAttributes().attribute(Usage.USAGE_ATTRIBUTE, objectFactory.named(Usage.class, Usage.NATIVE_LINK));
+        nativeLink.getAttributes().attribute(DEBUGGABLE_ATTRIBUTE, identity.isDebuggable());
+        nativeLink.getAttributes().attribute(OPTIMIZED_ATTRIBUTE, identity.isOptimized());
+        nativeLink.getAttributes().attribute(OperatingSystemFamily.OPERATING_SYSTEM_ATTRIBUTE, identity.getOperatingSystemFamily());
         nativeDirectLink.setTransitive(false);
-        nativeDirectLink.getAttributes().attribute(OperatingSystemFamily.OPERATING_SYSTEM_ATTRIBU
 
         Configuration nativeRuntime = configurations.create(names.withPrefix("nativeRuntime"));
         nativeRuntime.extendsFrom(getImplementationDependencies());

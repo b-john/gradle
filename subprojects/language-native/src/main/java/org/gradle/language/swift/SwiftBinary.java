@@ -56,9 +56,14 @@ public interface SwiftBinary extends ComponentWithObjectFiles, ComponentWithDepe
     FileCollection getCompileModules();
 
     /**
-     * Returns the link libraries to use to link this binary. Includes the link libraries of the component's dependencies.
+     * Returns the link libraries to use to link this binary. Includes the link libraries of the component's dependencies transitively.
      */
     FileCollection getLinkLibraries();
+
+    /**
+     * Returns the link direct libraries to use to link this binary. Includes the link libraries of the component's direct, non-transitive dependencies.
+     */
+    FileCollection getLinkDirectLibraries();
 
     /**
      * Returns the runtime libraries required by this binary. Includes the runtime libraries of the component's dependencies.

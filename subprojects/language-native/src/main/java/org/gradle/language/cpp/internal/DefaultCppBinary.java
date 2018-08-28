@@ -52,6 +52,7 @@ public class DefaultCppBinary extends DefaultNativeBinary implements CppBinary {
     private final FileCollection sourceFiles;
     private final FileCollection includePath;
     private final Configuration linkLibraries;
+    private final Configuration linkDirectLibraries;
     private final FileCollection runtimeLibraries;
     private final CppPlatform targetPlatform;
     private final NativeToolChainInternal toolChain;
@@ -90,6 +91,15 @@ public class DefaultCppBinary extends DefaultNativeBinary implements CppBinary {
         nativeLink.getAttributes().attribute(OperatingSystemFamily.OPERATING_SYSTEM_ATTRIBUTE, identity.getOperatingSystemFamily());
         nativeLink.extendsFrom(getImplementationDependencies());
 
+        Configuration nativeDirectLink = configurations.create(names.withPrefix("nativeDirectLink"));
+        nativeDirectLink.setCanBeConsumed(false);
+        nativeDirectLink.getAttributes().attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.class, Usage.NATIVE_LINK));
+        nativeDirectLink.getAttributes().attribute(DEBUGGABLE_ATTRIBUTE, identity.isDebuggable());
+        nativeDirectLink.getAttributes().attribute(OPTIMIZED_ATTRIBUTE, identity.isOptimized());
+        nativeDirectLink.getAttributes().attribute(OperatingSystemFamily.OPERATING_SYSTEM_ATTRIBUTE, identity.getOperatingSystemFamily());
+        nativeDirectLink.setTransitive(false);
+        nativeDirectLink.extendsFrom(getImplementationDependencies());
+
         Configuration nativeRuntime = configurations.create(names.withPrefix("nativeRuntime"));
         nativeRuntime.setCanBeConsumed(false);
         nativeRuntime.getAttributes().attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.class, Usage.NATIVE_RUNTIME));
@@ -101,6 +111,7 @@ public class DefaultCppBinary extends DefaultNativeBinary implements CppBinary {
         includePathConfiguration = includePathConfig;
         includePath = componentHeaderDirs.plus(new FileCollectionAdapter(new IncludePath(includePathConfig)));
         linkLibraries = nativeLink;
+        linkDirectLibraries = nativeDirectLink;
         runtimeLibraries = nativeRuntime;
     }
 
@@ -147,6 +158,11 @@ public class DefaultCppBinary extends DefaultNativeBinary implements CppBinary {
     @Override
     public FileCollection getLinkLibraries() {
         return linkLibraries;
+    }
+
+    @Override
+    public FileCollection getLinkDirectLibraries() {
+        return linkDirectLibraries;
     }
 
     public Configuration getLinkConfiguration() {

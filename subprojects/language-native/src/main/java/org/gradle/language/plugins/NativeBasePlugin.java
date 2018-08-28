@@ -176,6 +176,7 @@ public class NativeBasePlugin implements Plugin<ProjectInternal> {
                 LinkExecutable link = tasks.create(names.getTaskName("link"), LinkExecutable.class);
                 link.source(executable.getObjects());
                 link.lib(executable.getLinkLibraries());
+                link.directLib(executable.getLinkDirectLibraries());
                 final PlatformToolProvider toolProvider = executable.getPlatformToolProvider();
                 link.getLinkedFile().set(buildDirectory.file(providers.provider(new Callable<String>() {
                     @Override
@@ -243,6 +244,7 @@ public class NativeBasePlugin implements Plugin<ProjectInternal> {
                 final LinkSharedLibrary link = tasks.create(names.getTaskName("link"), LinkSharedLibrary.class);
                 link.source(library.getObjects());
                 link.lib(library.getLinkLibraries());
+                link.lib(library.getDirectLinkLibraries());
                 // TODO - need to set soname
                 final PlatformToolProvider toolProvider = library.getPlatformToolProvider();
                 Provider<RegularFile> runtimeFile = buildDirectory.file(providers.provider(new Callable<String>() {

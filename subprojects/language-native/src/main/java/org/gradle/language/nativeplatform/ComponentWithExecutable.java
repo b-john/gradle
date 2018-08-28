@@ -35,6 +35,11 @@ public interface ComponentWithExecutable extends ComponentWithNativeRuntime {
     FileCollection getLinkLibraries();
 
     /**
+     * Returns the link direct libraries to use to link this binary. Includes the link libraries of the component's direct, non-transitive dependencies.
+     */
+    FileCollection getLinkDirectLibraries();
+
+    /**
      * Returns the executable file to produce.
      */
     Provider<RegularFile> getExecutableFile();

@@ -45,12 +45,16 @@ import org.gradle.language.base.internal.compile.VersionAwareCompiler;
 import org.gradle.language.base.internal.tasks.SimpleStaleClassCleaner;
 import org.gradle.nativeplatform.internal.BuildOperationLoggingCompilerDecorator;
 import org.gradle.nativeplatform.internal.LinkerSpec;
+import org.gradle.nativeplatform.internal.FileNameSpec;
 import org.gradle.nativeplatform.platform.NativePlatform;
 import org.gradle.nativeplatform.platform.internal.NativePlatformInternal;
 import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 
 /**
@@ -63,6 +67,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
     private final ListProperty<String> linkerArgs;
     private final ConfigurableFileCollection source;
     private final ConfigurableFileCollection libs;
+    private final ConfigurableFileCollection directLibs;
     private final Property<Boolean> debuggable;
     private final Property<NativePlatform> targetPlatform;
     private final Property<NativeToolChain> toolChain;
@@ -70,6 +75,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
     public AbstractLinkTask() {
         ObjectFactory objectFactory = getProject().getObjects();
         this.libs = getProject().files();
+        this.directLibs = getProject().files();
         this.source = getProject().files();
         this.linkedFile = newOutputFile();
         this.destinationDirectory = newOutputDirectory();
@@ -180,6 +186,14 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
         return libs;
     }
 
+    /**
+     * The direct library files to be passed to the linker.
+     */
+    @InputFiles
+    public ConfigurableFileCollection getDirectLibs() {
+        return directLibs;
+    }
+
     public void setLibs(FileCollection libs) {
         this.libs.setFrom(libs);
     }
@@ -196,6 +210,13 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
      */
     public void lib(Object libs) {
         this.libs.from(libs);
+    }
+
+    /**
+     * Adds a set of direct library files files to be linked. The provided libs object is evaluated as per {@link org.gradle.api.Project#files(Object...)}.
+     */
+    public void directLib(Object directLibs) {
+        this.directLibs.from(directLibs);
     }
 
     /**
@@ -224,13 +245,19 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
             return;
         }
 
+        // Filter out libraries to get ordered direct-only dependencies.
+        List<FileNameSpec> specs = new ArrayList<FileNameSpec>();
+        for (File unordered : getDirectLibs ()) {
+            specs.add(new FileNameSpec(unordered.getName()));
+        }
+
         LinkerSpec spec = createLinkerSpec();
         spec.setTargetPlatform(getTargetPlatform().get());
         spec.setTempDir(getTemporaryDir());
         spec.setOutputFile(getLinkedFile().get().getAsFile());
 
         spec.objectFiles(getSource());
-        spec.libraries(getLibs());
+        spec.libraries(getLibs().filter(new OrSpec<File>(specs.toArray(new FileNameSpec[specs.size()]))));
         spec.args(getLinkerArgs().get());
         spec.setDebuggable(getDebuggable().get());
 

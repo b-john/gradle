@@ -120,8 +120,8 @@ class GccLinker extends AbstractCompiler<LinkerSpec> {
             if (!spec.getLibraryPath().isEmpty()) {
                 String path = new String();
                 for (File ordered : spec.getLibraryPath()) {
-                    path = ordered.getAbsolutePath();
-                    path = path.substring(0, path.lastIndexOf(File.separator)) + ":";
+                    String filePath = ordered.getAbsolutePath();
+                    path += filePath.substring(0, filePath.lastIndexOf(File.separator)) + ":";
                 }
                 env.put("LD_LIBRARY_PATH", path);
             }

@@ -25,21 +25,37 @@ import org.gradle.internal.operations.logging.BuildOperationLogger;
 import org.gradle.internal.work.WorkerLeaseService;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.nativeplatform.internal.BinaryToolSpec;
+import org.gradle.nativeplatform.toolchain.internal.DefaultMutableCommandLineToolContext;
+import org.gradle.nativeplatform.toolchain.internal.MutableCommandLineToolContext;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 public abstract class AbstractCompiler<T extends BinaryToolSpec> implements Compiler<T> {
     private final CommandLineToolInvocationWorker commandLineToolInvocationWorker;
     private final ArgsTransformer<T> argsTransformer;
-    private final CommandLineToolContext invocationContext;
+    private final EnvTransformer<T> envTransformer;
     private final boolean useCommandFile;
     private final BuildOperationExecutor buildOperationExecutor;
     private final WorkerLeaseService workerLeaseService;
+    private CommandLineToolContext invocationContext;
 
     protected AbstractCompiler(BuildOperationExecutor buildOperationExecutor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, ArgsTransformer<T> argsTransformer, boolean useCommandFile, WorkerLeaseService workerLeaseService) {
         this.buildOperationExecutor = buildOperationExecutor;
         this.argsTransformer = argsTransformer;
+        this.envTransformer = null;
+        this.invocationContext = invocationContext;
+        this.useCommandFile = useCommandFile;
+        this.commandLineToolInvocationWorker = commandLineToolInvocationWorker;
+        this.workerLeaseService = workerLeaseService;
+    }
+
+    protected AbstractCompiler(BuildOperationExecutor buildOperationExecutor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, ArgsTransformer<T> argsTransformer, EnvTransformer<T> envTransformer, boolean useCommandFile, WorkerLeaseService workerLeaseService) {
+        this.buildOperationExecutor = buildOperationExecutor;
+        this.argsTransformer = argsTransformer;
+        this.envTransformer = envTransformer;
         this.invocationContext = invocationContext;
         this.useCommandFile = useCommandFile;
         this.commandLineToolInvocationWorker = commandLineToolInvocationWorker;
@@ -67,6 +83,18 @@ public abstract class AbstractCompiler<T extends BinaryToolSpec> implements Comp
 
     protected List<String> getArguments(T spec) {
         List<String> args = argsTransformer.transform(spec);
+        if(envTransformer != null) {
+            Map<String, String> environment = envTransformer.transform(spec);
+
+            // If environment is specified, update the invocation Context
+            if(!environment.isEmpty()) {
+                MutableCommandLineToolContext environmentContext = new DefaultMutableCommandLineToolContext();
+                for (Map.Entry<String, String> entry : environment.entrySet()) {
+                    environmentContext.addEnvironmentVar(entry.getKey(), entry.getValue());
+                }
+                this.invocationContext = environmentContext;
+            }
+        }
 
         Action<List<String>> userArgTransformer = invocationContext.getArgAction();
         // modifies in place

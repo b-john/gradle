@@ -246,19 +246,23 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
             return;
         }
 
-        // Filter out libraries to get ordered direct-only dependencies.
-        List<FileNameSpec> specs = new ArrayList<FileNameSpec>();
-        for (File unordered : getDirectLibs ()) {
-            specs.add(new FileNameSpec(unordered.getName()));
-        }
-
         LinkerSpec spec = createLinkerSpec();
         spec.setTargetPlatform(getTargetPlatform().get());
         spec.setTempDir(getTemporaryDir());
         spec.setOutputFile(getLinkedFile().get().getAsFile());
-
         spec.objectFiles(getSource());
+
+        // Filter out libraries to get ordered direct-only dependencies.
+        // But keep all libraries on the library path as required.
+        for (File ordered : getLibs()) {
+           spec.libraryPath(ordered);
+        }
+        List<FileNameSpec> specs = new ArrayList<FileNameSpec>();
+        for (File unordered : getDirectLibs ()) {
+            specs.add(new FileNameSpec(unordered.getName()));
+        }
         spec.libraries(getLibs().filter(new OrSpec<File>(specs.toArray(new FileNameSpec[specs.size()]))));
+
         spec.args(getLinkerArgs().get());
         spec.setDebuggable(getDebuggable().get());
 

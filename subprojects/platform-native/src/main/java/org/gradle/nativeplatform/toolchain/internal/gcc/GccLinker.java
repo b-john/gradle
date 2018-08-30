@@ -25,6 +25,7 @@ import org.gradle.nativeplatform.internal.SharedLibraryLinkerSpec;
 import org.gradle.nativeplatform.platform.OperatingSystem;
 import org.gradle.nativeplatform.toolchain.internal.AbstractCompiler;
 import org.gradle.nativeplatform.toolchain.internal.ArgsTransformer;
+import org.gradle.nativeplatform.toolchain.internal.EnvTransformer;
 import org.gradle.nativeplatform.toolchain.internal.CommandLineToolContext;
 import org.gradle.nativeplatform.toolchain.internal.CommandLineToolInvocation;
 import org.gradle.nativeplatform.toolchain.internal.CommandLineToolInvocationWorker;
@@ -32,10 +33,12 @@ import org.gradle.nativeplatform.toolchain.internal.CommandLineToolInvocationWor
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 class GccLinker extends AbstractCompiler<LinkerSpec> {
     GccLinker(BuildOperationExecutor buildOperationExecutor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, boolean useCommandFile, WorkerLeaseService workerLeaseService) {
-        super(buildOperationExecutor, commandLineToolInvocationWorker, invocationContext, new GccLinkerArgsTransformer(), useCommandFile, workerLeaseService);
+        super(buildOperationExecutor, commandLineToolInvocationWorker, invocationContext, new GccLinkerArgsTransformer(), new GccLinkerEnvTransformer(), useCommandFile, workerLeaseService);
     }
 
     @Override
@@ -86,9 +89,6 @@ class GccLinker extends AbstractCompiler<LinkerSpec> {
                 }
 
             }
-            if (!spec.getLibraryPath().isEmpty()) {
-                throw new UnsupportedOperationException("Library Path not yet supported on GCC");
-            }
 
             for (String userArg : spec.getArgs()) {
                 args.add(userArg);
@@ -109,6 +109,24 @@ class GccLinker extends AbstractCompiler<LinkerSpec> {
             } else {
                 args.add("-Wl,-soname," + installName);
             }
+        }
+    }
+
+    private static class GccLinkerEnvTransformer implements EnvTransformer<LinkerSpec> {
+        @Override
+        public Map<String, String> transform(LinkerSpec spec) {
+            Map<String, String> env = new HashMap<String, String>();
+
+            if (!spec.getLibraryPath().isEmpty()) {
+                String path = new String();
+                for (File ordered : spec.getLibraryPath()) {
+                    path = ordered.getAbsolutePath();
+                    path = path.substring(0, path.lastIndexOf(File.separator)) + ":";
+                }
+                env.put("LD_LIBRARY_PATH", path);
+            }
+
+            return env;
         }
     }
 }

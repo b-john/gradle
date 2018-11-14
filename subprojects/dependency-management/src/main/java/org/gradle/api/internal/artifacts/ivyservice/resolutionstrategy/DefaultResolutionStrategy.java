@@ -149,7 +149,7 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
 
     public Action<DependencySubstitution> getDependencySubstitutionRule() {
         Set<ModuleVersionSelector> forcedModules = getForcedModules();
-        Action<DependencySubstitution> moduleForcingResolveRule = Cast.uncheckedCast(forcedModules.isEmpty() ? Actions.doNothing() : new ModuleForcingResolveRule(forcedModules, moduleIdentifierFactory));
+        Action<DependencySubstitution> moduleForcingResolveRule = Cast.uncheckedCast(forcedModules.isEmpty() ? Actions.doNothing() : new ModuleForcingResolveRule(forcedModules));
         Action<DependencySubstitution> localDependencySubstitutionsAction = this.dependencySubstitutions.getRuleAction();
         Action<DependencySubstitution> globalDependencySubstitutionRulesAction = globalDependencySubstitutionRules.getRuleAction();
         //noinspection unchecked
@@ -164,7 +164,7 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
         return assumeFluidDependencies || dependencySubstitutions.hasRules() || globalDependencySubstitutionRules.hasRules() || vcsResolver.hasRules();
     }
 
-    public DefaultResolutionStrategy setForcedModules(Object ... moduleVersionSelectorNotations) {
+    public DefaultResolutionStrategy setForcedModules(Object... moduleVersionSelectorNotations) {
         mutationValidator.validateMutation(STRATEGY);
         this.forcedModules.clear();
         force(moduleVersionSelectorNotations);

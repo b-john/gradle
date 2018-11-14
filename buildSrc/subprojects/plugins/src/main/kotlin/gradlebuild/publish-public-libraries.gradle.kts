@@ -34,7 +34,7 @@ val generatePom = tasks.register("generatePom", GeneratePom::class.java)
 
 val main by java.sourceSets
 val sourceJar = tasks.register("sourceJar", Jar::class.java) {
-    classifier = "sources"
+    archiveClassifier.set("sources")
     from(main.java.srcDirs + main.groovy.srcDirs)
 }
 
@@ -72,7 +72,7 @@ fun Project.configureUploadArchivesTask(generatePom: TaskProvider<GeneratePom>) 
 
         repositories {
             ivy {
-                artifactPattern(createArtifactPattern(rootProject.extra.get("isSnapshot") as Boolean, project.group.toString(), base.archivesBaseName))
+                artifactPattern(createArtifactPattern(rootProject.extra["isSnapshot"] as Boolean, project.group.toString(), base.archivesBaseName))
                 credentials {
                     username = artifactoryUserName
                     password = artifactoryUserPassword

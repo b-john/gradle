@@ -25,11 +25,9 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Tracks access to files by touching, i.e. updating the last modified
- * timestamp, files and directory at the supplied depth within the supplied base
- * directory.
+ * Tracks access to files and directories at the supplied depth within the supplied base
+ * directory by setting their last access time in the supplied {@link FileAccessTimeJournal}.
  */
-@SuppressWarnings("Since15")
 public class SingleDepthFileAccessTracker implements FileAccessTracker {
 
     private final Path baseDir;

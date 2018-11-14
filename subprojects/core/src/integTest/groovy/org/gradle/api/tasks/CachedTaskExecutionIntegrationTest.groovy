@@ -263,6 +263,7 @@ class CachedTaskExecutionIntegrationTest extends AbstractIntegrationSpec impleme
         withBuildCache().fails 'adHocTask'
 
         then:
+        failure.assertHasDescription("Execution failed for task ':adHocTask'.")
         failure.assertHasCause("Could not evaluate spec for 'on CI'.")
     }
 
@@ -405,10 +406,8 @@ class CachedTaskExecutionIntegrationTest extends AbstractIntegrationSpec impleme
         then:
         skippedTasks.empty
         [
-            "taskClass",
-            "classLoaderHash",
-            "actionType",
-            "actionClassLoaderHash",
+            "taskImplementation",
+            "actionImplementation",
             "inputValuePropertyHash for 'options.fork'",
             "inputFilePropertyHash for 'classpath'",
             "outputPropertyName",

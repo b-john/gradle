@@ -24,15 +24,18 @@ import org.junit.rules.TemporaryFolder
 import spock.lang.Specification
 
 class BuildLogicFunctionalTest extends Specification {
-    @Rule final TemporaryFolder testProjectDir = new TemporaryFolder()
+    @Rule TemporaryFolder testProjectDir = new TemporaryFolder()
+    File settingsFile
     File buildFile
 
     def setup() {
+        settingsFile = testProjectDir.newFile('settings.gradle')
         buildFile = testProjectDir.newFile('build.gradle')
     }
 
     def "hello world task prints hello world"() {
         given:
+        settingsFile << "rootProject.name = 'hello-world'"
         buildFile << """
             task helloWorld {
                 doLast {

@@ -47,59 +47,6 @@ class LifecycleProjectEvaluatorIntegrationTest extends AbstractIntegrationSpec {
         output =~ /> Outer\s+< Outer\s+Inner/
     }
 
-    def "if two exceptions occur, prints an info about both without stacktrace"() {
-        given:
-        buildFile << """
-            afterEvaluate { throw new RuntimeException("after evaluate failure") }
-            throw new RuntimeException("configure failure")
-        """
-        executer.withStacktraceDisabled()
-
-        when:
-        fails 'help'
-
-        then:
-        failure.assertHasErrorOutput("Project evaluation failed including an error in afterEvaluate {}. Run with --stacktrace for details of the afterEvaluate {} error.")
-        failure.assertNotOutput("after evaluate failure")
-        failure.assertHasDescription("A problem occurred evaluating root project 'root'.")
-        failure.assertHasCause("configure failure")
-        failure.assertHasNoCause("after evaluate failure")
-    }
-
-    def "if two exceptions occur with --stacktrace, prints both with stacktrace"() {
-        given:
-        buildFile << """
-            afterEvaluate { throw new RuntimeException("after evaluate failure") }
-            throw new RuntimeException("configure failure")
-        """
-        executer.withStackTraceChecksDisabled()
-
-        when:
-        fails 'help'
-
-        then:
-        failure.assertHasErrorOutput("Project evaluation failed including an error in afterEvaluate {}.\njava.lang.RuntimeException: after evaluate failure")
-        failure.assertHasDescription("A problem occurred evaluating root project 'root'.")
-        failure.assertHasCause("configure failure")
-        failure.assertHasNoCause("after evaluate failure")
-    }
-
-    def "if only one exception occurs in afterEvaluate, prints it as primary"() {
-        given:
-        buildFile << """
-            afterEvaluate { throw new RuntimeException("after evaluate failure") }
-        """
-        executer.withStacktraceDisabled()
-
-        when:
-        fails 'help'
-
-        then:
-        failure.assertNotOutput("Project evaluation failed including an error in afterEvaluate {}.")
-        failure.assertHasDescription("A problem occurred configuring root project 'root'.")
-        failure.assertHasCause("after evaluate failure")
-    }
-
     def "captures lifecycle operations"() {
         given:
         file('buildSrc/buildSrcWhenReady.gradle') << ""
@@ -163,30 +110,35 @@ class LifecycleProjectEvaluatorIntegrationTest extends AbstractIntegrationSpec {
         def configOp = operations.only(ConfigureProjectBuildOperationType, { it.details.projectPath == ':foo' })
         with(operations.only(NotifyProjectBeforeEvaluatedBuildOperationType, { it.details.projectPath == ':foo' })) {
             displayName == 'Notify beforeEvaluate listeners of :foo'
-            children*.displayName == ["Apply script before.gradle to project ':foo'"]
+            children*.displayName == ["Execute Project.beforeEvaluate listener"]
+            children.first().children*.displayName == ["Apply script before.gradle to project ':foo'"]
             parentId == configOp.id
         }
         with(operations.only(NotifyProjectAfterEvaluatedBuildOperationType, { it.details.projectPath == ':foo' })) {
             displayName == 'Notify afterEvaluate listeners of :foo'
-            children*.displayName == ["Apply script after.gradle to project ':foo'"]
+            children*.displayName == ["Execute Project.afterEvaluate listener"]
+            children.first().children*.displayName == ["Apply script after.gradle to project ':foo'"]
             parentId == configOp.id
         }
 
         with(operations.only(NotifyTaskGraphWhenReadyBuildOperationType, { it.details.buildPath == ':buildSrc' })) {
             displayName == 'Notify task graph whenReady listeners (:buildSrc)'
-            children*.displayName == ["Apply script buildSrcWhenReady.gradle to project ':buildSrc'"]
+            children*.displayName == ["Execute TaskExecutionGraph.whenReady listener"]
+            children.first().children*.displayName == ["Apply script buildSrcWhenReady.gradle to project ':buildSrc'"]
             parentId == operations.first("Run tasks (:buildSrc)").id
         }
 
         with(operations.only(NotifyTaskGraphWhenReadyBuildOperationType, { it.details.buildPath == ':included-build' })) {
             displayName == 'Notify task graph whenReady listeners (:included-build)'
-            children*.displayName == ["Apply script includedWhenReady.gradle to project ':included-build'"]
+            children*.displayName == ["Execute TaskExecutionGraph.whenReady listener"]
+            children.first().children*.displayName == ["Apply script includedWhenReady.gradle to project ':included-build'"]
             parentId == operations.first("Run tasks (:included-build)").id
         }
 
         with(operations.only(NotifyTaskGraphWhenReadyBuildOperationType, { it.details.buildPath == ':' })) {
             displayName == 'Notify task graph whenReady listeners'
-            children*.displayName == ["Apply script whenReady.gradle to project ':foo'"]
+            children*.displayName == ["Execute TaskExecutionGraph.whenReady listener"]
+            children.first().children*.displayName == ["Apply script whenReady.gradle to project ':foo'"]
             parentId == operations.first("Run tasks").id
         }
 

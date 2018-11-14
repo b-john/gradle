@@ -16,6 +16,7 @@
 
 package org.gradle.language.cpp.internal;
 
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
@@ -23,7 +24,6 @@ import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.component.SoftwareComponentInternal;
@@ -36,6 +36,7 @@ import org.gradle.language.cpp.CppExecutable;
 import org.gradle.language.cpp.CppPlatform;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithExecutable;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithRuntimeUsage;
+import org.gradle.language.nativeplatform.internal.Names;
 import org.gradle.nativeplatform.Linkage;
 import org.gradle.nativeplatform.tasks.InstallExecutable;
 import org.gradle.nativeplatform.tasks.LinkExecutable;
@@ -49,6 +50,7 @@ import java.util.Set;
 
 public class DefaultCppExecutable extends DefaultCppBinary implements CppExecutable, ConfigurableComponentWithExecutable, ConfigurableComponentWithRuntimeUsage, SoftwareComponentInternal {
     private final RegularFileProperty executableFile;
+    private final Property<Task> executableFileProducer;
     private final DirectoryProperty installationDirectory;
     private final Property<InstallExecutable> installTaskProperty;
     private final Property<LinkExecutable> linkTaskProperty;
@@ -57,11 +59,12 @@ public class DefaultCppExecutable extends DefaultCppBinary implements CppExecuta
     private final RegularFileProperty debuggerExecutableFile;
 
     @Inject
-    public DefaultCppExecutable(String name, ProjectLayout projectLayout, ObjectFactory objectFactory, FileOperations fileOperations, Provider<String> baseName, FileCollection sourceFiles, FileCollection componentHeaderDirs, ConfigurationContainer configurations, Configuration implementation, CppPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
-        super(name, projectLayout, objectFactory, baseName, sourceFiles, componentHeaderDirs, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
-        this.executableFile = projectLayout.fileProperty();
-        this.debuggerExecutableFile = projectLayout.fileProperty();
-        this.installationDirectory = projectLayout.directoryProperty();
+    public DefaultCppExecutable(Names names, ObjectFactory objectFactory, FileOperations fileOperations, Provider<String> baseName, FileCollection sourceFiles, FileCollection componentHeaderDirs, ConfigurationContainer configurations, Configuration implementation, CppPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
+        super(names, objectFactory, baseName, sourceFiles, componentHeaderDirs, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
+        this.executableFile = objectFactory.fileProperty();
+        this.executableFileProducer = objectFactory.property(Task.class);
+        this.debuggerExecutableFile = objectFactory.fileProperty();
+        this.installationDirectory = objectFactory.directoryProperty();
         this.linkTaskProperty = objectFactory.property(LinkExecutable.class);
         this.installTaskProperty = objectFactory.property(InstallExecutable.class);
         this.runtimeElementsProperty = objectFactory.property(Configuration.class);
@@ -76,6 +79,11 @@ public class DefaultCppExecutable extends DefaultCppBinary implements CppExecuta
     @Override
     public RegularFileProperty getExecutableFile() {
         return executableFile;
+    }
+
+    @Override
+    public Property<Task> getExecutableFileProducer() {
+        return executableFileProducer;
     }
 
     @Override

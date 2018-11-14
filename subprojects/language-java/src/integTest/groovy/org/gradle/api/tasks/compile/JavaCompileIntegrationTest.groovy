@@ -212,27 +212,27 @@ class JavaCompileIntegrationTest extends AbstractPluginIntegrationTest {
         given:
         settingsFile << "include 'a', 'b'"
         buildFile << """
-        allprojects {
-            apply plugin: 'java'
-
-            repositories {
-               maven { url '$mavenRepo.uri' }
+            allprojects {
+                apply plugin: 'java'
+    
+                repositories {
+                   maven { url '$mavenRepo.uri' }
+                }
             }
-        }
-
-        task checkClasspath {
-            doLast {
-                def compileClasspath = project(':a').compileJava.classpath.files*.name
-                assert compileClasspath.contains('b.jar')
-                assert compileClasspath.contains('other-1.0.jar')
-                assert !compileClasspath.contains('shared-1.0.jar')
-            }
-        }
         """
 
         file('a/build.gradle') << '''
             dependencies {
                 implementation project(':b')
+            }
+            
+            task checkClasspath {
+                doLast {
+                    def compileClasspath = compileJava.classpath.files*.name
+                    assert compileClasspath.contains('b.jar')
+                    assert compileClasspath.contains('other-1.0.jar')
+                    assert !compileClasspath.contains('shared-1.0.jar')
+                }
             }
         '''
         file('b/build.gradle') << '''
@@ -528,8 +528,7 @@ class JavaCompileIntegrationTest extends AbstractPluginIntegrationTest {
 
         then:
         executedAndNotSkipped ':compileJava'
-        outputContains 'Could not read annotation processor declarations'
-
+        errorOutput.contains('error in opening zip file')
     }
 
     @Issue("gradle/gradle#1581")
@@ -775,7 +774,7 @@ class JavaCompileIntegrationTest extends AbstractPluginIntegrationTest {
 
         then:
         noExceptionThrown()
-        outputContains("You specified both --module-source-path and a sourcepath. These options are mutually exclusive. Removing sourcepath.")
+        outputContains("You specified both --module-source-path and a sourcepath. These options are mutually exclusive. Ignoring sourcepath.")
         file("build/classes/java/main/example/module-info.class").exists()
         file("build/classes/java/main/example/io/example/Example.class").exists()
         file("build/classes/java/main/another/module-info.class").exists()
@@ -784,52 +783,41 @@ class JavaCompileIntegrationTest extends AbstractPluginIntegrationTest {
         !file("build/classes/java/main/ignored/io/ignored/IgnoredExample.class").exists()
     }
 
-    def "sourcepath is merged from compilerArgs, but deprecation warning is emitted"() {
+    def "fails when sourcepath is set on compilerArgs"() {
         buildFile << '''
             apply plugin: 'java'
             
             compileJava {
-                options.compilerArgs = ['-sourcepath', files('sources1').asPath]
-                options.sourcepath = files('sources2')
-            }            
+                options.compilerArgs = ['-sourcepath', files('src/main/java').asPath]
+            }
         '''
         file('src/main/java/Square.java') << 'public class Square extends Rectangle {}'
-        file('sources2/Rectangle.java') << 'public class Rectangle extends Shape {}'
-        file('sources1/Shape.java') << 'public class Shape {}'
 
         when:
-        result = executer.expectDeprecationWarning().withTasks('compileJava').run()
+        fails 'compileJava'
 
         then:
-        file('build/classes/java/main/Square.class').exists()
-        file('build/classes/java/main/Rectangle.class').exists()
-        file('build/classes/java/main/Shape.class').exists()
-        outputContains("Specifying the source path in the CompilerOptions compilerArgs property has been deprecated")
+        failureHasCause("Cannot specify -sourcepath or --source-path via `CompileOptions.compilerArgs`. Use the `CompileOptions.sourcepath` property instead.")
     }
 
-    def "sourcepath is respected even when exclusively specified from compilerArgs, but deprecation warning is emitted"() {
+    def "fails when processorpath is set on compilerArgs"() {
         buildFile << '''
             apply plugin: 'java'
             
             compileJava {
-                options.compilerArgs = ['-sourcepath', files('sources1').asPath]
-            }            
+                options.compilerArgs = ['-processorpath', files('src/main/java').asPath]
+            }
         '''
         file('src/main/java/Square.java') << 'public class Square extends Rectangle {}'
-        file('sources1/Rectangle.java') << 'public class Rectangle extends Shape {}'
-        file('sources1/Shape.java') << 'public class Shape {}'
 
         when:
-        result = executer.expectDeprecationWarning().withTasks('compileJava').run()
+        fails 'compileJava'
 
         then:
-        file('build/classes/java/main/Square.class').exists()
-        file('build/classes/java/main/Rectangle.class').exists()
-        file('build/classes/java/main/Shape.class').exists()
-        outputContains("Specifying the source path in the CompilerOptions compilerArgs property has been deprecated")
+        failureHasCause("Cannot specify -processorpath or --processor-path via `CompileOptions.compilerArgs`. Use the `CompileOptions.annotationProcessorPath` property instead.")
     }
 
-    @Requires(adhoc = { AvailableJavaHomes.getJdk7() && AvailableJavaHomes.getJdk8() })
+    @Requires(adhoc = { AvailableJavaHomes.getJdk7() && AvailableJavaHomes.getJdk8() && TestPrecondition.NOT_JDK_IBM.fulfilled && TestPrecondition.FIX_TO_WORK_ON_JAVA9.fulfilled })
     def "bootclasspath can be set"() {
         def jdk7 = AvailableJavaHomes.getJdk7()
         def jdk7bootClasspath = TextUtil.escapeString(jdk7.jre.homeDir.absolutePath) + "/lib/rt.jar"
@@ -844,6 +832,7 @@ class JavaCompileIntegrationTest extends AbstractPluginIntegrationTest {
                 } else if (project.hasProperty("java8")) {
                     options.bootstrapClasspath = files("$jdk8bootClasspath")
                 } 
+                options.fork = true
             }
         """
         file('src/main/java/Main.java') << """
@@ -859,39 +848,13 @@ class JavaCompileIntegrationTest extends AbstractPluginIntegrationTest {
         """
 
         expect:
-        executer.withJavaHome jdk8.javaHome
         succeeds "clean", "compileJava"
 
-        executer.withJavaHome jdk8.javaHome
         executer.withStacktraceDisabled()
         fails "-Pjava7", "clean", "compileJava"
         failure.assertHasErrorOutput "Main.java:8: error: cannot find symbol"
 
-        executer.withJavaHome jdk8.javaHome
         succeeds "-Pjava8", "clean", "compileJava"
-
-        executer.withJavaHome jdk7.javaHome
-        succeeds "-Pjava8", "clean", "compileJava"
-    }
-
-    @Requires([TestPrecondition.JDK8_OR_EARLIER, TestPrecondition.JDK_ORACLE])
-    def "CompileOptions.bootclasspath is deprecated"() {
-        def jre = AvailableJavaHomes.getBestJre()
-        def bootClasspath = TextUtil.escapeString(jre.absolutePath) + "/lib/rt.jar"
-        buildFile << """
-            apply plugin: 'java'
-            
-            compileJava {
-                options.bootClasspath = "$bootClasspath"
-            }
-        """
-        file('src/main/java/Main.java') << "public class Main {}"
-
-        expect:
-        executer.withFullDeprecationStackTraceDisabled()
-        executer.expectDeprecationWarning()
-        succeeds "compileJava"
-        output.contains "The CompileOptions.bootClasspath property has been deprecated. This is scheduled to be removed in Gradle 5.0. Please use the CompileOptions.bootstrapClasspath property instead."
     }
 
     def "deletes empty packages dirs"() {
@@ -957,5 +920,27 @@ class JavaCompileIntegrationTest extends AbstractPluginIntegrationTest {
 
         then:
         !file("build/headers/java/main/Foo.h").exists()
+    }
+
+    def "emits deprecation warning for effectiveAnnotationProcessorPath property"() {
+        buildScript("""
+            apply plugin: 'java'
+                        
+            ${jcenterRepository()}
+
+            task printAnnotationProcessors {
+                doLast {
+                    println compileJava.effectiveAnnotationProcessorPath
+                }
+            }
+        """.stripIndent())
+
+        when:
+        executer.expectDeprecationWarning()
+        succeeds 'printAnnotationProcessors'
+
+        then:
+        outputContains('The JavaCompile.effectiveAnnotationProcessorPath property has been deprecated.')
+        outputContains('Please use the JavaCompile.options.annotationProcessorPath property instead.')
     }
 }

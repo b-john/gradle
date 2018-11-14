@@ -21,11 +21,10 @@ import org.gradle.composite.internal.IncludedBuildControllers;
 import org.gradle.internal.invocation.BuildAction;
 import org.gradle.internal.invocation.BuildActionRunner;
 import org.gradle.internal.invocation.BuildController;
-import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
 import org.gradle.internal.operations.BuildOperationContext;
 import org.gradle.internal.operations.BuildOperationDescriptor;
 import org.gradle.internal.operations.BuildOperationExecutor;
-import org.gradle.internal.operations.RunnableBuildOperation;
+import org.gradle.internal.operations.CallableBuildOperation;
 
 /**
  * An {@link BuildActionRunner} that wraps all work in a build operation.
@@ -40,15 +39,19 @@ public class RunAsBuildOperationBuildActionRunner implements BuildActionRunner {
     }
 
     @Override
-    public void run(final BuildAction action, final BuildController buildController) {
+    public Result run(final BuildAction action, final BuildController buildController) {
         BuildOperationExecutor buildOperationExecutor = buildController.getGradle().getServices().get(BuildOperationExecutor.class);
-        buildOperationExecutor.run(new RunnableBuildOperation() {
+        return buildOperationExecutor.call(new CallableBuildOperation<Result>() {
             @Override
-            public void run(BuildOperationContext context) {
+            public Result call(BuildOperationContext context) {
                 checkDeprecations((StartParameterInternal)buildController.getGradle().getStartParameter());
                 buildController.getGradle().getServices().get(IncludedBuildControllers.class).rootBuildOperationStarted();
-                delegate.run(action, buildController);
+                Result result = delegate.run(action, buildController);
                 context.setResult(RESULT);
+                if (result.getBuildFailure() != null) {
+                    context.failed(result.getBuildFailure());
+                }
+                return result;
             }
 
             @Override
@@ -59,9 +62,6 @@ public class RunAsBuildOperationBuildActionRunner implements BuildActionRunner {
     }
 
     private void checkDeprecations(StartParameterInternal startParameter) {
-        UnsupportedJavaRuntimeException.javaDeprecationWarning();
-
-        // This must be done here because DeprecationLogger needs to be initialized properly
         startParameter.checkDeprecation();
     }
 }

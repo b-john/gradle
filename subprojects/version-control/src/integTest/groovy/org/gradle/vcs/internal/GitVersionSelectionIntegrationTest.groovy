@@ -60,6 +60,7 @@ class GitVersionSelectionIntegrationTest extends AbstractIntegrationSpec {
                 version = '1.0'
                 def jar = tasks.create("jar_$version", Jar) {
                     baseName = "test"
+                    destinationDir = buildDir
                     version = project.version
                 }
                 configurations['default'].outgoing.artifact(jar)
@@ -434,7 +435,7 @@ Required by:
 
         then:
         failure.assertHasCause("Could not resolve all task dependencies for configuration ':compile'.")
-        failure.assertHasCause("""Could not find any version that matches test:test (branch: release).
+        failure.assertHasCause("""Could not find any version that matches test:test:{branch release}.
 Searched in the following locations: Git repository at ${repo.url}
 Required by:
     project :""")

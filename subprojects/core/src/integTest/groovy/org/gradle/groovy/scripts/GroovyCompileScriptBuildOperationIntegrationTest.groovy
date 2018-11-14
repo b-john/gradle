@@ -59,14 +59,14 @@ class GroovyCompileScriptBuildOperationIntegrationTest extends AbstractIntegrati
         ]
 
         scriptCompiles.details*.language == [
-            'groovy',
-            'groovy',
-            'groovy',
-            'groovy',
-            'groovy',
-            'groovy',
-            'groovy',
-            'groovy'
+            'GROOVY',
+            'GROOVY',
+            'GROOVY',
+            'GROOVY',
+            'GROOVY',
+            'GROOVY',
+            'GROOVY',
+            'GROOVY'
         ]
         scriptCompiles.details*.stage == [
             CLASSPATH,
@@ -110,6 +110,7 @@ class GroovyCompileScriptBuildOperationIntegrationTest extends AbstractIntegrati
         succeeds "help"
 
         when: // already compiled shared script
+        file('otherBuild/settings.gradle').touch()
         file('otherBuild/build.gradle') << "apply from: '../shared.gradle'"
         executer.usingProjectDirectory(file('otherBuild'))
         succeeds 'help'
@@ -133,6 +134,7 @@ class GroovyCompileScriptBuildOperationIntegrationTest extends AbstractIntegrati
         succeeds "help"
 
         when: // already compiled shared script with different build classpath
+        file('otherBuild/settings.gradle').touch()
         file('otherBuild/buildSrc/build.gradle') << """
         tasks.withType(AbstractCompile){
             options.compilerArgs = ['-proc:none']

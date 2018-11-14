@@ -15,6 +15,8 @@
  */
 package org.gradle.gradlebuild.buildquality
 
+import accessors.java
+import accessors.reporting
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
@@ -22,12 +24,8 @@ import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.plugins.JavaBasePlugin
 import org.gradle.api.plugins.JavaLibraryPlugin
 import org.gradle.api.tasks.testing.Test
-import org.gradle.plugin.devel.tasks.ValidateTaskProperties
-
-import accessors.java
-import accessors.reporting
-
 import org.gradle.kotlin.dsl.*
+import org.gradle.plugin.devel.tasks.ValidateTaskProperties
 
 
 private
@@ -76,19 +74,20 @@ fun Project.addValidateTask() =
         // This block gets called twice for the core project as core applies the base as well as the library plugin. That is why we need to check
         // whether the task already exists.
         if (tasks.findByName(validateTaskName) == null) {
-            val validateTask = tasks.register(validateTaskName, ValidateTaskProperties::class.java) {
+            val validateTask = tasks.register(validateTaskName, ValidateTaskProperties::class) {
                 val main by java.sourceSets
                 dependsOn(main.output)
-                classes = main.output.classesDirs
-                classpath = main.runtimeClasspath
+                classes.setFrom(main.output.classesDirs)
+                classes.setFrom(main.runtimeClasspath)
                 // TODO Should we provide a more intuitive way in the task definition to configure this property from Kotlin?
                 outputFile.set(reporting.baseDirectory.file(reportFileName))
                 failOnWarning = true
+                enableStricterValidation = true
             }
             tasks.named("codeQuality").configure {
                 dependsOn(validateTask)
             }
-            tasks.withType(Test::class.java).configureEach {
+            tasks.withType(Test::class).configureEach {
                 shouldRunAfter(validateTask)
             }
         }

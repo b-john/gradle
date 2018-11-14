@@ -19,11 +19,10 @@ package org.gradle.integtests.tooling.r26
 import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 import org.gradle.api.GradleException
+import org.gradle.integtests.fixtures.executer.OutputScrapingExecutionFailure
 import org.gradle.integtests.tooling.TestLauncherSpec
 import org.gradle.integtests.tooling.fixture.ProgressEvents
-import org.gradle.integtests.tooling.fixture.TargetGradleVersion
 import org.gradle.integtests.tooling.fixture.TestResultHandler
-import org.gradle.integtests.tooling.fixture.ToolingApiVersion
 import org.gradle.tooling.BuildCancelledException
 import org.gradle.tooling.BuildException
 import org.gradle.tooling.ListenerFailedException
@@ -38,8 +37,6 @@ import org.gradle.tooling.exceptions.UnsupportedBuildArgumentException
 import org.gradle.util.GradleVersion
 import spock.lang.Timeout
 
-@ToolingApiVersion(">=2.6")
-@TargetGradleVersion(">=2.6")
 @Timeout(120)
 class TestLauncherCrossVersionSpec extends TestLauncherSpec {
     public static final GradleVersion GRADLE_VERSION_34 = GradleVersion.version("3.4")
@@ -51,11 +48,11 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
         launchTests(testDescriptors("example.MyTest"));
         then:
         events.assertIsABuild()
-        assertTaskOperationSuccesfulOrSkippedWithNoSource(":compileJava")
-        assertTaskOperationSuccesfulOrSkippedWithNoSource(":processResources")
+        assertTaskOperationSuccessfulOrSkippedWithNoSource(":compileJava")
+        assertTaskOperationSuccessfulOrSkippedWithNoSource(":processResources")
         events.operation("Task :classes").successful
         events.operation("Task :compileTestJava").successful
-        assertTaskOperationSuccesfulOrSkippedWithNoSource(":processTestResources")
+        assertTaskOperationSuccessfulOrSkippedWithNoSource(":processTestResources")
         events.operation("Task :testClasses").successful
         events.operation("Task :test").successful
         events.operation("Task :secondTest").successful
@@ -216,6 +213,7 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
     def "fails with meaningful error when no tests declared"() {
         when:
         launchTests([])
+
         then:
         def e = thrown(TestExecutionException)
         e.message == "No test declared for execution."
@@ -255,6 +253,11 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
 
         def e = thrown(TestExecutionException)
         e.cause.message == "Requested test task with path ':secondTest' cannot be found."
+
+        and:
+        def failure = OutputScrapingExecutionFailure.from(stdout.toString(), stderr.toString())
+        failure.assertHasDescription("Requested test task with path ':secondTest' cannot be found.")
+        assertHasBuildFailedLogging()
     }
 
     def "fails with meaningful error when passing invalid arguments"() {
@@ -263,6 +266,7 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
             launcher.withJvmTestClasses("example.MyTest")
                 .withArguments("--someInvalidArgument")
         }
+
         then:
         def e = thrown(UnsupportedBuildArgumentException)
         e.message.contains("Unknown command-line option '--someInvalidArgument'.")
@@ -276,10 +280,16 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
             launcher.withJvmTestClasses("example.MyTest")
         }
         then:
-        thrown(BuildException)
+        def e = thrown(BuildException)
+        e.cause.message.contains('A problem occurred evaluating root project')
+
+        and:
+        def failure = OutputScrapingExecutionFailure.from(stdout.toString(), stderr.toString())
+        failure.assertHasDescription('A problem occurred evaluating root project')
+        assertHasBuildFailedLogging()
     }
 
-    def "throws BuildCancelledException when build canceled"() {
+    def "throws BuildCancelledException when build canceled before request started"() {
         given:
         buildFile << "some invalid build code"
         when:
@@ -424,7 +434,7 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
         }
     }
 
-    def assertTaskOperationSuccesfulOrSkippedWithNoSource(String taskPath) {
+    def assertTaskOperationSuccessfulOrSkippedWithNoSource(String taskPath) {
         ProgressEvents.Operation operation = events.operation("Task $taskPath")
         if (targetVersion < GRADLE_VERSION_34) {
             assert operation.successful
@@ -443,7 +453,7 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
             sourceSets {
                 moreTests {
                     java.srcDir "src/test"
-                    output.classesDir = file("build/classes/moreTests")
+                    ${separateClassesDirs(targetVersion) ? "java.outputDir" : "output.classesDir"} = file("build/classes/moreTests")
                     compileClasspath = compileClasspath + sourceSets.test.compileClasspath
                     runtimeClasspath = runtimeClasspath + sourceSets.test.runtimeClasspath
                 }
@@ -451,7 +461,7 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
 
             task secondTest(type:Test) {
                 classpath = sourceSets.moreTests.runtimeClasspath
-                testClassesDir = sourceSets.moreTests.output.classesDir
+                ${separateClassesDirs(targetVersion) ? "testClassesDirs": "testClassesDir"} = sourceSets.moreTests.output.${separateClassesDirs(targetVersion) ? "classesDirs": "classesDir"}
             }
 
             build.dependsOn secondTest

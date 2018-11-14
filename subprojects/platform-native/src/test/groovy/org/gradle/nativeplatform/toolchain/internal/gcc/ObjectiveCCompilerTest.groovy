@@ -34,6 +34,7 @@ class ObjectiveCCompilerTest extends GccCompatibleNativeCompilerTest {
 
     @Override
     protected List<String> getCompilerSpecificArguments(File includeDir, File systemIncludeDir) {
-        return [ '-x', 'objective-c' ] + super.getCompilerSpecificArguments(includeDir, systemIncludeDir)
+        def arguments = super.getCompilerSpecificArguments(includeDir, systemIncludeDir)
+        return ['-x', 'objective-c'] + arguments
     }
 }

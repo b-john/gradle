@@ -16,13 +16,13 @@
 
 package org.gradle.language.swift.internal;
 
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.component.SoftwareComponentInternal;
@@ -35,6 +35,7 @@ import org.gradle.language.cpp.internal.DefaultUsageContext;
 import org.gradle.language.cpp.internal.NativeVariantIdentity;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithExecutable;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithRuntimeUsage;
+import org.gradle.language.nativeplatform.internal.Names;
 import org.gradle.language.swift.SwiftExecutable;
 import org.gradle.language.swift.SwiftPlatform;
 import org.gradle.nativeplatform.Linkage;
@@ -50,6 +51,7 @@ import java.util.Set;
 
 public class DefaultSwiftExecutable extends DefaultSwiftBinary implements SwiftExecutable, ConfigurableComponentWithExecutable, ConfigurableComponentWithRuntimeUsage, SoftwareComponentInternal {
     private final RegularFileProperty executableFile;
+    private final Property<Task> executableFileProducer;
     private final DirectoryProperty installDirectory;
     private final Property<Configuration> runtimeElementsProperty;
     private final Property<LinkExecutable> linkTaskProperty;
@@ -58,13 +60,14 @@ public class DefaultSwiftExecutable extends DefaultSwiftBinary implements SwiftE
     private final ConfigurableFileCollection outputs;
 
     @Inject
-    public DefaultSwiftExecutable(String name, ProjectLayout projectLayout, ObjectFactory objectFactory, FileOperations fileOperations, Provider<String> module, boolean testable, FileCollection source, ConfigurationContainer configurations, Configuration implementation, SwiftPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
-        super(name, projectLayout, objectFactory, module, testable, source, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
-        this.executableFile = projectLayout.fileProperty();
-        this.installDirectory = projectLayout.directoryProperty();
+    public DefaultSwiftExecutable(Names names, ObjectFactory objectFactory, FileOperations fileOperations, Provider<String> module, boolean testable, FileCollection source, ConfigurationContainer configurations, Configuration implementation, SwiftPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
+        super(names, objectFactory, module, testable, source, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
+        this.executableFile = objectFactory.fileProperty();
+        this.executableFileProducer = objectFactory.property(Task.class);
+        this.installDirectory = objectFactory.directoryProperty();
         this.linkTaskProperty = objectFactory.property(LinkExecutable.class);
         this.installTaskProperty = objectFactory.property(InstallExecutable.class);
-        this.debuggerExecutableFile = projectLayout.fileProperty();
+        this.debuggerExecutableFile = objectFactory.fileProperty();
         this.runtimeElementsProperty = objectFactory.property(Configuration.class);
         this.outputs = fileOperations.configurableFiles();
     }
@@ -72,6 +75,11 @@ public class DefaultSwiftExecutable extends DefaultSwiftBinary implements SwiftE
     @Override
     public ConfigurableFileCollection getOutputs() {
         return outputs;
+    }
+
+    @Override
+    public Property<Task> getExecutableFileProducer() {
+        return executableFileProducer;
     }
 
     @Override

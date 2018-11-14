@@ -18,9 +18,9 @@ package org.gradle.plugin.devel.tasks;
 
 import org.apache.commons.io.FileUtils;
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Incubating;
 import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
@@ -35,11 +35,16 @@ import java.util.Properties;
 /**
  * Generates plugin descriptors from plugin declarations.
  */
-@Incubating
 public class GeneratePluginDescriptors extends DefaultTask {
 
-    private final ListProperty<PluginDeclaration> declarations = getProject().getObjects().listProperty(PluginDeclaration.class);
-    private final DirectoryProperty outputDirectory = newOutputDirectory();
+    private final ListProperty<PluginDeclaration> declarations;
+    private final DirectoryProperty outputDirectory;
+
+    public GeneratePluginDescriptors() {
+        ObjectFactory objectFactory = getProject().getObjects();
+        declarations = objectFactory.listProperty(PluginDeclaration.class).empty();
+        outputDirectory = objectFactory.directoryProperty();
+    }
 
     @Input
     public ListProperty<PluginDeclaration> getDeclarations() {

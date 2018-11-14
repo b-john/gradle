@@ -37,7 +37,7 @@ class UserGuidePlaySamplesIntegrationTest extends AbstractIntegrationSpec {
     @Rule Sample play26Sample = new Sample(temporaryFolder, "play/play-2.6")
 
     def setup() {
-        useRepositoryMirrors()
+        executer.withRepositoryMirrors()
     }
 
     def "sourcesets sample is buildable" () {
@@ -68,9 +68,6 @@ class UserGuidePlaySamplesIntegrationTest extends AbstractIntegrationSpec {
     @IgnoreIf({ !AbstractPlaySampleIntegrationTest.portForWithBrowserTestIsFree() })
     def "compiler sample is buildable" () {
         when:
-        // The following annotation processors were detected on the compile classpath: 'org.atteo.classindex.processor.ClassIndexProcessor'.
-        // Detecting annotation processors on the compile classpath is deprecated
-        executer.expectDeprecationWarning()
         sample compilerPlaySample
 
         then:

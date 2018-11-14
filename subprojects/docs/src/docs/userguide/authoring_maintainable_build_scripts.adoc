@@ -13,16 +13,16 @@
 // limitations under the License.
 
 [[authoring_maintainable_build_scripts]]
-= Authoring Maintainable Build Scripts
+= Authoring Maintainable Builds
 
-Gradle build scripts combine the qualities of declarative build logic, expressiveness as well as flexibility and rigidity as needed.
-As a build script author it is easy to fall into the trap of striking the wrong balance or applying poor coding habits.
-This chapter describes best practices for writing your build script in a meaningful, yet flexible and efficient way.
+Gradle has a rich API with several approaches to creating build logic.
+The associated flexibility can easily lead to unnecessarily complex builds with custom code commonly added directly to build scripts.
+In this chapter, we present several best practices that will help you develop expressive and maintainable builds that are easy to use.
 
-NOTE: The third-party link:https://github.com/nebula-plugins/gradle-lint-plugin[Gradle lint plugin] helps with enforcing a desired code style in a build script if you are looking for appropriate linting automation.
+NOTE: The third-party link:https://github.com/nebula-plugins/gradle-lint-plugin[Gradle lint plugin] helps with enforcing a desired code style in build scripts if that's something that would interest you.
 
 [[sec:avoid_imperative_logic_in_scripts]]
-== Avoiding imperative logic in scripts
+== Avoid using imperative logic in scripts
 
 The Gradle runtime does not enforce a specific style for build logic.
 For that very reason, it's easy to end up with a build script that mixes declarative DSL elements with imperative, procedural code.
@@ -40,39 +40,32 @@ The following sample build shows a negative example of using conditional logic d
 While this code snippet is small, it is easy to imagine a full-blown build script using numerous procedural statements and the impact it would have on readability and maintainability.
 By moving the code into a class link:{guidesUrl}/testing-gradle-plugins/[testability] also becomes a valid option.
 
-=== Example: A build script using conditional logic to create a task
-
-[source.multi-language-sample,groovy]
-.build.gradle
-----
-include::{samplesPath}/userguide/bestPractices/conditionalLogic/dont/build.gradle[]
-----
+.A build script using conditional logic to create a task
+====
+include::sample[dir="userguide/bestPractices/conditionalLogic/dont/groovy", files="build.gradle[]"]
+include::sample[dir="userguide/bestPractices/conditionalLogic/dont/kotlin", files="build.gradle.kts[]"]
+====
 
 Let's compare the build script with the same logic implemented as a binary plugin.
 The code might look more involved at first but clearly looks more like typical application code.
 This particular plugin class lives in the <<organizing_gradle_projects.adoc#sec:build_sources,`buildSrc` directory>> which makes it available to the build script automatically.
 
-=== Example: A binary plugin implementing imperative logic
-
-[source,java]
-.ReleasePlugin.java
-----
-include::{samplesPath}/userguide/bestPractices/conditionalLogic/do/buildSrc/src/main/java/com/enterprise/ReleasePlugin.java[]
-----
+.A binary plugin implementing imperative logic
+====
+include::sample[dir="userguide/bestPractices/conditionalLogic/do/groovy/buildSrc/src/main/java/com/enterprise", files="ReleasePlugin.java[]"]
+====
 
 Now that the build logic has been translated into a plugin, you can apply it in the build script.
 The build script has been shrunk from 8 lines of code to a one liner.
 
-=== Example: A build script applying a plugin that encapsulates imperative logic
-
-[source.multi-language-sample,groovy]
-.build.gradle
-----
-include::{samplesPath}/userguide/bestPractices/conditionalLogic/do/build.gradle[]
-----
+.A build script applying a plugin that encapsulates imperative logic
+====
+include::sample[dir="userguide/bestPractices/conditionalLogic/do/groovy", files="build.gradle[]"]
+include::sample[dir="userguide/bestPractices/conditionalLogic/do/kotlin", files="build.gradle.kts[]"]
+====
 
 [[sec:avoiding_gradle_internal_apis]]
-== Avoiding Gradle internal APIs
+== Avoid using internal Gradle APIs
 
 Use of Gradle internal APIs in plugins and build scripts has the potential to break builds when either Gradle or plugins change.
 
@@ -130,27 +123,25 @@ Use other collections or I/O frameworks instead of `org.gradle.util.CollectionUt
 Gradle plugin authors may find the Designing Gradle Plugins subsection on link:{guidesUrl}/designing-gradle-plugins/#restricting_the_plugin_implementation_to_gradle_s_public_api[restricting the plugin implementation to Gradle's public API] helpful.
 
 [[sec:declaring_tasks]]
-== Declaring tasks in a build script
+== Follow conventions when declaring tasks
 
 The task API gives a build author a lot of flexibility to declare tasks in a build script.
 For optimal readability and maintainability follow these rules:
 
-* The task type should be the only key-value pair that belongs within the parentheses after the task name.
-* Any other configuration logic for a task should be defined as part of link:{groovyDslPath}/org.gradle.api.Project.html#org.gradle.api.Project:task(java.lang.String,%20groovy.lang.Closure)[Project.task(java.lang.String, groovy.lang.Closure)] if possible.
-* <<tutorial_using_tasks.adoc#sec:hello_world,Task actions>> should only be declared with the methods link:{groovyDslPath}/org.gradle.api.Task.html#org.gradle.api.Task:doFirst(org.gradle.api.Action)[Task.doFirst{}] or link:{groovyDslPath}/org.gradle.api.Task.html#org.gradle.api.Task:doLast(org.gradle.api.Action)[Task.doLast{}].
-* link:{groovyDslPath}/org.gradle.api.Task.html#org.gradle.api.Task:doLast(org.gradle.api.Action)[Task.doLast{}] should be used if the task only defines a single action.
+* The task type should be the only key-value pair within the parentheses after the task name.
+* Other configuration should be done within the task's configuration block.
+* <<tutorial_using_tasks.adoc#sec:hello_world,Task actions>> added when declaring a task should only be declared with the methods link:{groovyDslPath}/org.gradle.api.Task.html#org.gradle.api.Task:doFirst(org.gradle.api.Action)[Task.doFirst{}] or link:{groovyDslPath}/org.gradle.api.Task.html#org.gradle.api.Task:doLast(org.gradle.api.Action)[Task.doLast{}].
+* When declaring an ad-hoc task — one that doesn't have an explicit type — you should use link:{groovyDslPath}/org.gradle.api.Task.html#org.gradle.api.Task:doLast(org.gradle.api.Action)[Task.doLast{}] if you're only declaring a single action.
 * A task should <<#sec:improving_task_discoverability,define a group and description>>.
 
-=== Example: Definition of tasks following best practices
-
-[source.multi-language-sample,groovy]
-.build.gradle
-----
-include::{samplesPath}/userguide/bestPractices/taskDefinition/build.gradle[]
-----
+.Definition of tasks following best practices
+====
+include::sample[dir="userguide/bestPractices/taskDefinition/groovy", files="build.gradle[]"]
+include::sample[dir="userguide/bestPractices/taskDefinition/kotlin", files="build.gradle.kts[]"]
+====
 
 [[sec:improving_task_discoverability]]
-== Improving task discoverability
+== Improve task discoverability
 
 Even new users to a build should to be able to find crucial information quickly and effortlessly.
 In Gradle you can declare a link:{groovyDslPath}/org.gradle.api.Project.html#org.gradle.api.Project:group[group] and a link:{groovyDslPath}/org.gradle.api.Project.html#org.gradle.api.Project:description[description] for any task of the build.
@@ -161,13 +152,11 @@ The example task `generateDocs` generates documentation for a project in the for
 The task should be organized underneath the bucket `Documentation`.
 The description should express its intent.
 
-=== Example: A task declaring the group and description
-
-[source.multi-language-sample,groovy]
-.build.gradle
-----
-include::{samplesPath}/userguide/bestPractices/taskGroupDescription/build.gradle[]
-----
+.A task declaring the group and description
+====
+include::sample[dir="userguide/bestPractices/taskGroupDescription/groovy", files="build.gradle[]"]
+include::sample[dir="userguide/bestPractices/taskGroupDescription/kotlin", files="build.gradle.kts[]"]
+====
 
 The output of the tasks report reflects the assigned values.
 
@@ -193,26 +182,22 @@ It's an invaluable tool for diagnosing common performance issues.
 Let's consider the following incantation of the anti-pattern described above.
 In the build script you can see that the dependencies assigned to the configuration `printArtifactNames` are resolved outside of the task action.
 
-=== Example: Executing logic during configuration should be avoided
-
-[source.multi-language-sample,groovy]
-.build.gradle
-----
-include::{samplesPath}/userguide/bestPractices/logicDuringConfiguration/dont/build.gradle[tag=config-logic]
-----
+.Executing logic during configuration should be avoided
+====
+include::sample[dir="userguide/bestPractices/logicDuringConfiguration/dont/groovy", files="build.gradle[tags=config-logic]"]
+include::sample[dir="userguide/bestPractices/logicDuringConfiguration/dont/kotlin", files="build.gradle.kts[tags=config-logic]"]
+====
 
 The code for resolving the dependencies should be moved into the task action to avoid the performance impact of resolving the dependencies before they are actually needed.
 
-=== Example: Executing logic during execution phase is preferred
-
-[source.multi-language-sample,groovy]
-.build.gradle
-----
-include::{samplesPath}/userguide/bestPractices/logicDuringConfiguration/do/build.gradle[tag=config-logic]
-----
+.Executing logic during execution phase is preferred
+====
+include::sample[dir="userguide/bestPractices/logicDuringConfiguration/do/groovy", files="build.gradle[tags=config-logic]"]
+include::sample[dir="userguide/bestPractices/logicDuringConfiguration/do/kotlin", files="build.gradle.kts[tags=config-logic]"]
+====
 
 [[sec:avoiding_use_of_gradlebuild]]
-== Avoiding the use of `GradleBuild`
+== Avoid using the `GradleBuild` task type
 
 The link:{groovyDslPath}/org.gradle.api.tasks.GradleBuild.html[GradleBuild] task type allows a build script to define a task that invokes another Gradle build.
 The use of this type is generally discouraged.
@@ -225,7 +210,7 @@ The appropriate approach depends on the problem at hand. Here're some options:
 * Use <<composite_builds.adoc#composite_builds,composite builds>> for projects that are physically separated but should occasionally be built as a single unit.
 
 [[sec:avoiding_inter_project_configuration]]
-== Avoiding inter-project configuration
+== Avoid inter-project configuration
 
 Gradle does not restrict build script authors from reaching into the domain model from one project into another one in a <<multi_project_builds.adoc#multi_project_builds,multi-project build>>.
 Strongly-coupled projects hurts <<multi_project_builds.adoc#sec:parallel_execution,build execution performance>> as well as readability and maintainability of code.
@@ -238,13 +223,13 @@ The following practices should be avoided:
 * Declaring unnecessary <<declaring_dependencies.adoc#sec:declaring_project_dependency,project dependencies>>.
 
 [[sec:avoiding_passwords_in_plain_text]]
-== Avoiding passwords in plain text
+== Avoid storing passwords in plain text
 
 Most builds need to consume one or many passwords.
 The reasons for this need may vary.
 Some builds need a password for publishing artifacts to a secured binary repository, other builds need a password for downloading binary files.
 Passwords should always kept safe to prevent fraud.
-Under no circumstance should you add the password to the build script as property in plain text or declare it in a `gradle.properties`.
+Under no circumstance should you add the password to the build script in plain text or declare it in a `gradle.properties` file.
 Those files usually live in a version control repository and can be viewed by anyone that has access to it.
 
 Passwords should be stored in encrypted fashion. At the moment Gradle does not provide a built-in mechanism for encrypting, storing and accessing passwords.

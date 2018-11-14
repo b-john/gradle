@@ -12,7 +12,7 @@
         "providedBy": [
             "com.google.collections:google-collections"
         ],
-        "selected": "com.google.guava:guava-jdk5"
+        "selected": "com.google.guava:guava"
     },
     {
         "name": "junit",
@@ -44,6 +44,14 @@
         ],
         "selected": "org.slf4j:log4j-over-slf4j"
     },
+    {
+        "name": "groovy",
+        "providedBy": [
+            "org.codehaus.groovy:groovy",
+            "org.codehaus.groovy:groovy-all"
+        ],
+        "selected": "org.gradle.groovy:groovy-all"
+    },
 
     // forced upgrade: the following modules will automatically be replaced with the selected module
     // even if there's no conflict, and forces an upgrade to the specified version
@@ -53,7 +61,7 @@
             "asm:asm", "asm:asm-all", "asm:asm-debug-all"
         ],
         "selected": "org.ow2.asm:asm",
-        "upgrade": "6.1"
+        "upgrade": "7.0"
     },
     {
         "name": "asm-analysis",
@@ -61,7 +69,7 @@
             "asm:asm", "asm:asm-all", "asm:asm-debug-all"
         ],
         "selected": "org.ow2.asm:asm",
-        "upgrade": "6.1"
+        "upgrade": "7.0"
     },
     {
         "name": "asm-commons",
@@ -69,7 +77,7 @@
             "asm:asm-commons", "asm:asm-all", "asm:asm-debug-all"
         ],
         "selected": "org.ow2.asm:asm-commons",
-        "upgrade": "6.1"
+        "upgrade": "7.0"
     },
     {
         "name": "asm-tree",
@@ -77,7 +85,7 @@
             "asm:asm-tree", "asm:asm-all", "asm:asm-debug-all"
         ],
         "selected": "org.ow2.asm:asm-tree",
-        "upgrade": "6.1"
+        "upgrade": "7.0"
     },
     {
         "name": "asm-util",
@@ -85,7 +93,7 @@
             "asm:asm-util", "asm:asm-all", "asm:asm-debug-all"
         ],
         "selected": "org.ow2.asm:asm-util",
-        "upgrade": "6.1"
+        "upgrade": "7.0"
     },
     {
         "name": "cglib",

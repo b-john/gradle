@@ -34,13 +34,14 @@ import org.gradle.api.internal.ConventionMapping;
 import org.gradle.api.internal.IConventionAware;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectStateRegistry;
+import org.gradle.api.internal.tasks.TaskDependencyContainer;
+import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
 import org.gradle.api.plugins.JavaBasePlugin;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginConvention;
 import org.gradle.api.plugins.WarPlugin;
 import org.gradle.api.plugins.scala.ScalaBasePlugin;
 import org.gradle.api.tasks.SourceSetContainer;
-import org.gradle.api.tasks.TaskDependency;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.xml.XmlTransformer;
@@ -60,7 +61,6 @@ import org.gradle.plugins.ide.idea.model.internal.IdeaDependenciesProvider;
 import org.gradle.plugins.ide.internal.IdeArtifactRegistry;
 import org.gradle.plugins.ide.internal.IdePlugin;
 import org.gradle.plugins.ide.internal.configurer.UniqueProjectNameProvider;
-import org.gradle.util.SingleMessageLogger;
 
 import javax.inject.Inject;
 import java.io.File;
@@ -139,12 +139,6 @@ public class IdeaPlugin extends IdePlugin {
         configureForWarPlugin(project);
         configureForScalaPlugin();
         linkCompositeBuildDependencies((ProjectInternal) project);
-    }
-
-    // No one should be calling this.
-    @Deprecated
-    public void performPostEvaluationActions() {
-        SingleMessageLogger.nagUserOfDiscontinuedMethod("performPostEvaluationActions");
     }
 
     private void configureIdeaWorkspace(final Project project) {
@@ -375,14 +369,14 @@ public class IdeaPlugin extends IdePlugin {
             @Override
             public Set<File> call() {
                 SourceSetContainer sourceSets = project.getConvention().getPlugin(JavaPluginConvention.class).getSourceSets();
-                return sourceSets.getByName("main").getAllSource().getSrcDirs();
+                return sourceSets.getByName("main").getAllJava().getSrcDirs();
             }
         });
         convention.map("testSourceDirs", new Callable<Set<File>>() {
             @Override
             public Set<File> call() {
                 SourceSetContainer sourceSets = project.getConvention().getPlugin(JavaPluginConvention.class).getSourceSets();
-                return sourceSets.getByName("test").getAllSource().getSrcDirs();
+                return sourceSets.getByName("test").getAllJava().getSrcDirs();
             }
         });
         convention.map("resourceDirs", new Callable<Set<File>>() {
@@ -441,6 +435,7 @@ public class IdeaPlugin extends IdePlugin {
 
         Collection<Configuration> provided = scopes.get(GeneratedIdeaScope.PROVIDED.name()).get(IdeaDependenciesProvider.SCOPE_PLUS);
         provided.add(configurations.getByName(JavaPlugin.COMPILE_CLASSPATH_CONFIGURATION_NAME));
+        provided.add(configurations.getByName(JavaPlugin.ANNOTATION_PROCESSOR_CONFIGURATION_NAME));
 
         Collection<Configuration> runtime = scopes.get(GeneratedIdeaScope.RUNTIME.name()).get(IdeaDependenciesProvider.SCOPE_PLUS);
         runtime.add(configurations.getByName(JavaPlugin.RUNTIME_CLASSPATH_CONFIGURATION_NAME));
@@ -448,6 +443,7 @@ public class IdeaPlugin extends IdePlugin {
         Collection<Configuration> test = scopes.get(GeneratedIdeaScope.TEST.name()).get(IdeaDependenciesProvider.SCOPE_PLUS);
         test.add(configurations.getByName(JavaPlugin.TEST_COMPILE_CLASSPATH_CONFIGURATION_NAME));
         test.add(configurations.getByName(JavaPlugin.TEST_RUNTIME_CLASSPATH_CONFIGURATION_NAME));
+        test.add(configurations.getByName(JavaPlugin.TEST_ANNOTATION_PROCESSOR_CONFIGURATION_NAME));
 
         ideaModel.getModule().setScopes(scopes);
     }
@@ -507,7 +503,7 @@ public class IdeaPlugin extends IdePlugin {
 
     private void ideaModuleDependsOnRoot() {
         // see IdeaScalaConfigurer which requires the ipr to be generated first
-        project.getTasks().named(IDEA_MODULE_TASK_NAME).configure(dependsOn(project.getRootProject().getTasks().named(IDEA_PROJECT_TASK_NAME)));
+        project.getTasks().named(IDEA_MODULE_TASK_NAME, dependsOn(project.getRootProject().getTasks().named(IDEA_PROJECT_TASK_NAME)));
     }
 
     private void linkCompositeBuildDependencies(final ProjectInternal project) {
@@ -515,10 +511,10 @@ public class IdeaPlugin extends IdePlugin {
             getLifecycleTask().configure(new Action<Task>() {
                 @Override
                 public void execute(Task task) {
-                    task.dependsOn(new Callable<List<TaskDependency>>() {
+                    task.dependsOn(new TaskDependencyContainer() {
                         @Override
-                        public List<TaskDependency> call() {
-                            return allImlArtifactsInComposite(project, ideaModel.getProject());
+                        public void visitDependencies(TaskDependencyResolveContext context) {
+                            visitAllImlArtifactsInComposite(project, ideaModel.getProject(), context);
                         }
                     });
                 }
@@ -526,8 +522,7 @@ public class IdeaPlugin extends IdePlugin {
         }
     }
 
-    private List<TaskDependency> allImlArtifactsInComposite(ProjectInternal project, IdeaProject ideaProject) {
-        List<TaskDependency> dependencies = Lists.newArrayList();
+    private void visitAllImlArtifactsInComposite(ProjectInternal project, IdeaProject ideaProject, TaskDependencyResolveContext context) {
         ProjectComponentIdentifier thisProjectId = projectPathRegistry.stateFor(project).getComponentIdentifier();
         for (IdeArtifactRegistry.Reference<IdeaModuleMetadata> reference : artifactRegistry.getIdeProjects(IdeaModuleMetadata.class)) {
             BuildIdentifier otherBuildId = reference.getOwningProject().getBuild();
@@ -544,8 +539,7 @@ public class IdeaPlugin extends IdePlugin {
                     continue;
                 }
             }
-            dependencies.add(reference.getBuildDependencies());
+            reference.visitDependencies(context);
         }
-        return dependencies;
     }
 }

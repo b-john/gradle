@@ -54,30 +54,27 @@ import org.gradle.api.internal.project.IsolatedAntBuilder;
 import org.gradle.api.internal.project.ProjectFactory;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectRegistry;
+import org.gradle.api.internal.project.ProjectStateRegistry;
 import org.gradle.api.internal.project.ProjectTaskLister;
 import org.gradle.api.internal.project.antbuilder.DefaultIsolatedAntBuilder;
 import org.gradle.api.internal.project.taskfactory.AnnotationProcessingTaskFactory;
-import org.gradle.api.internal.project.taskfactory.DefaultTaskClassInfoStore;
 import org.gradle.api.internal.project.taskfactory.ITaskFactory;
+import org.gradle.api.internal.project.taskfactory.PropertyAssociationTaskFactory;
 import org.gradle.api.internal.project.taskfactory.TaskClassInfoStore;
 import org.gradle.api.internal.project.taskfactory.TaskFactory;
 import org.gradle.api.internal.tasks.TaskStatistics;
-import org.gradle.api.internal.tasks.execution.statistics.TaskExecutionStatisticsEventAdapter;
-import org.gradle.api.internal.tasks.execution.statistics.TaskExecutionStatisticsListener;
-import org.gradle.api.internal.tasks.properties.DefaultPropertyMetadataStore;
 import org.gradle.api.internal.tasks.properties.DefaultPropertyWalker;
 import org.gradle.api.internal.tasks.properties.PropertyMetadataStore;
 import org.gradle.api.internal.tasks.properties.PropertyWalker;
-import org.gradle.api.internal.tasks.properties.annotations.PropertyAnnotationHandler;
 import org.gradle.api.internal.tasks.userinput.BuildScanUserInputHandler;
 import org.gradle.api.internal.tasks.userinput.DefaultBuildScanUserInputHandler;
 import org.gradle.api.internal.tasks.userinput.DefaultUserInputHandler;
 import org.gradle.api.internal.tasks.userinput.DefaultUserInputReader;
 import org.gradle.api.internal.tasks.userinput.NonInteractiveUserInputHandler;
 import org.gradle.api.internal.tasks.userinput.UserInputHandler;
+import org.gradle.api.invocation.BuildInvocationDetails;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.cache.CacheRepository;
-import org.gradle.cache.CacheValidator;
 import org.gradle.cache.FileLockManager;
 import org.gradle.caching.internal.BuildCacheServices;
 import org.gradle.configuration.BuildConfigurer;
@@ -87,6 +84,7 @@ import org.gradle.configuration.DefaultScriptPluginFactory;
 import org.gradle.configuration.ImportsReader;
 import org.gradle.configuration.ScriptPluginFactory;
 import org.gradle.configuration.ScriptPluginFactorySelector;
+import org.gradle.configuration.internal.UserCodeApplicationContext;
 import org.gradle.configuration.project.BuildScriptProcessor;
 import org.gradle.configuration.project.ConfigureActionsProjectEvaluator;
 import org.gradle.configuration.project.DelayedConfigurationActions;
@@ -98,8 +96,8 @@ import org.gradle.execution.TaskPathProjectEvaluator;
 import org.gradle.groovy.scripts.DefaultScriptCompilerFactory;
 import org.gradle.groovy.scripts.ScriptCompilerFactory;
 import org.gradle.groovy.scripts.ScriptExecutionListener;
-import org.gradle.groovy.scripts.internal.BuildScopeInMemoryCachingScriptClassCompiler;
 import org.gradle.groovy.scripts.internal.BuildOperationBackedScriptCompilationHandler;
+import org.gradle.groovy.scripts.internal.BuildScopeInMemoryCachingScriptClassCompiler;
 import org.gradle.groovy.scripts.internal.CrossBuildInMemoryCachingScriptClassCache;
 import org.gradle.groovy.scripts.internal.DefaultScriptCompilationHandler;
 import org.gradle.groovy.scripts.internal.DefaultScriptRunnerFactory;
@@ -108,6 +106,7 @@ import org.gradle.groovy.scripts.internal.ScriptSourceHasher;
 import org.gradle.initialization.BuildCancellationToken;
 import org.gradle.initialization.BuildLoader;
 import org.gradle.initialization.BuildOperationSettingsProcessor;
+import org.gradle.initialization.BuildRequestMetaData;
 import org.gradle.initialization.ClassLoaderRegistry;
 import org.gradle.initialization.ClassLoaderScopeRegistry;
 import org.gradle.initialization.DefaultClassLoaderScopeRegistry;
@@ -137,6 +136,9 @@ import org.gradle.internal.authentication.AuthenticationSchemeRegistry;
 import org.gradle.internal.authentication.DefaultAuthenticationSchemeRegistry;
 import org.gradle.internal.build.BuildState;
 import org.gradle.internal.build.BuildStateRegistry;
+import org.gradle.internal.build.DefaultPublicBuildPath;
+import org.gradle.internal.build.MutablePublicBuildPath;
+import org.gradle.internal.build.PublicBuildPath;
 import org.gradle.internal.buildevents.BuildStartedTime;
 import org.gradle.internal.classloader.ClassLoaderFactory;
 import org.gradle.internal.classloader.ClassLoaderHierarchyHasher;
@@ -145,6 +147,7 @@ import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.hash.FileHasher;
 import org.gradle.internal.hash.StreamHasher;
+import org.gradle.internal.invocation.DefaultBuildInvocationDetails;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.logging.progress.ProgressLoggerFactory;
 import org.gradle.internal.logging.sink.OutputEventListenerManager;
@@ -163,8 +166,6 @@ import org.gradle.model.internal.inspect.ModelRuleSourceDetector;
 import org.gradle.plugin.management.internal.autoapply.AutoAppliedPluginHandler;
 import org.gradle.plugin.use.internal.PluginRequestApplicator;
 import org.gradle.process.internal.ExecFactory;
-import org.gradle.profile.ProfileEventAdapter;
-import org.gradle.profile.ProfileListener;
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry;
 import org.gradle.tooling.provider.model.internal.BuildScopeToolingModelBuilderRegistryAction;
 import org.gradle.tooling.provider.model.internal.DefaultToolingModelBuilderRegistry;
@@ -175,6 +176,7 @@ import java.util.List;
  * Contains the singleton services for a single build invocation.
  */
 public class BuildScopeServices extends DefaultServiceRegistry {
+
     public BuildScopeServices(final ServiceRegistry parent) {
         super(parent);
         addProvider(new BuildCacheServices());
@@ -185,6 +187,10 @@ public class BuildScopeServices extends DefaultServiceRegistry {
                 }
             }
         });
+    }
+
+    protected MutablePublicBuildPath createPublicBuildPath() {
+        return new DefaultPublicBuildPath();
     }
 
     protected TaskStatistics createTaskStatistics() {
@@ -243,24 +249,18 @@ public class BuildScopeServices extends DefaultServiceRegistry {
         return new LifecycleProjectEvaluator(buildOperationExecutor, withActionsEvaluator);
     }
 
-    protected PropertyMetadataStore createPropertyMetadataStore(List<PropertyAnnotationHandler> annotationHandlers) {
-        return new DefaultPropertyMetadataStore(annotationHandlers);
-    }
-
     protected PropertyWalker createPropertyWalker(PropertyMetadataStore propertyMetadataStore) {
         return new DefaultPropertyWalker(propertyMetadataStore);
     }
 
-    protected TaskClassInfoStore createTaskClassInfoStore() {
-        return new DefaultTaskClassInfoStore();
-    }
-
-    protected ITaskFactory createITaskFactory(TaskClassInfoStore taskClassInfoStore) {
+    protected ITaskFactory createITaskFactory(TaskClassInfoStore taskClassInfoStore, PropertyWalker propertyWalker, ClassGenerator classGenerator) {
         return new AnnotationProcessingTaskFactory(
             taskClassInfoStore,
-            new TaskFactory(
-                get(ClassGenerator.class))
-        );
+            new PropertyAssociationTaskFactory(
+                new TaskFactory(
+                    classGenerator),
+                propertyWalker
+            ));
     }
 
     protected ScriptCompilerFactory createScriptCompileFactory(ListenerManager listenerManager,
@@ -281,14 +281,8 @@ public class BuildScopeServices extends DefaultServiceRegistry {
         ProgressLoggerFactory progressLoggerFactory, ClassLoaderCache classLoaderCache, ImportsReader importsReader,
         ScriptSourceHasher hasher, ClassLoaderHierarchyHasher classLoaderHierarchyHasher,
         BuildOperationExecutor buildOperationExecutor) {
-        CacheValidator scriptCacheInvalidator = new CacheValidator() {
-            public boolean isValid() {
-                return !startParameter.isRecompileScripts();
-            }
-        };
         return new FileCacheBackedScriptClassCompiler(
             cacheRepository,
-            scriptCacheInvalidator,
             new BuildOperationBackedScriptCompilationHandler(
                 new DefaultScriptCompilationHandler(classLoaderCache, importsReader), buildOperationExecutor),
             progressLoggerFactory,
@@ -297,10 +291,10 @@ public class BuildScopeServices extends DefaultServiceRegistry {
             classLoaderHierarchyHasher);
     }
 
-    protected ScriptPluginFactory createScriptPluginFactory(InstantiatorFactory instantiatorFactory, BuildOperationExecutor buildOperationExecutor) {
+    protected ScriptPluginFactory createScriptPluginFactory(InstantiatorFactory instantiatorFactory, BuildOperationExecutor buildOperationExecutor, UserCodeApplicationContext userCodeApplicationContext) {
         DefaultScriptPluginFactory defaultScriptPluginFactory = defaultScriptPluginFactory();
         ScriptPluginFactorySelector.ProviderInstantiator instantiator = ScriptPluginFactorySelector.defaultProviderInstantiatorFor(instantiatorFactory.inject(this));
-        ScriptPluginFactorySelector scriptPluginFactorySelector = new ScriptPluginFactorySelector(defaultScriptPluginFactory, instantiator, buildOperationExecutor);
+        ScriptPluginFactorySelector scriptPluginFactorySelector = new ScriptPluginFactorySelector(defaultScriptPluginFactory, instantiator, buildOperationExecutor, userCodeApplicationContext);
         defaultScriptPluginFactory.setScriptPluginFactory(scriptPluginFactorySelector);
         return scriptPluginFactorySelector;
     }
@@ -324,7 +318,7 @@ public class BuildScopeServices extends DefaultServiceRegistry {
             get(AutoAppliedPluginHandler.class));
     }
 
-    protected SettingsLoaderFactory createSettingsLoaderFactory(SettingsProcessor settingsProcessor, BuildLayoutFactory buildLayoutFactory, BuildState currentBuild, ClassLoaderScopeRegistry classLoaderScopeRegistry, FileLockManager fileLockManager, BuildOperationExecutor buildOperationExecutor, CachedClasspathTransformer cachedClasspathTransformer, CachingServiceLocator cachingServiceLocator, BuildStateRegistry buildRegistry) {
+    protected SettingsLoaderFactory createSettingsLoaderFactory(SettingsProcessor settingsProcessor, BuildLayoutFactory buildLayoutFactory, BuildState currentBuild, ClassLoaderScopeRegistry classLoaderScopeRegistry, FileLockManager fileLockManager, BuildOperationExecutor buildOperationExecutor, CachedClasspathTransformer cachedClasspathTransformer, CachingServiceLocator cachingServiceLocator, BuildStateRegistry buildRegistry, ProjectStateRegistry projectRegistry, PublicBuildPath publicBuildPath) {
         return new DefaultSettingsLoaderFactory(
             new DefaultSettingsFinder(buildLayoutFactory),
             settingsProcessor,
@@ -338,8 +332,12 @@ public class BuildScopeServices extends DefaultServiceRegistry {
                     PluginsProjectConfigureActions.of(
                         BuildSrcProjectConfigurationAction.class,
                         cachingServiceLocator)),
-                buildRegistry),
-            buildRegistry);
+                buildRegistry,
+                publicBuildPath),
+            buildRegistry,
+            projectRegistry,
+            publicBuildPath
+        );
     }
 
     protected InitScriptHandler createInitScriptHandler(ScriptPluginFactory scriptPluginFactory, ScriptHandlerFactory scriptHandlerFactory, BuildOperationExecutor buildOperationExecutor) {
@@ -399,16 +397,8 @@ public class BuildScopeServices extends DefaultServiceRegistry {
         return new DefaultProjectAccessListener();
     }
 
-    protected ProfileEventAdapter createProfileEventAdapter() {
-        return new ProfileEventAdapter(get(BuildStartedTime.class), get(Clock.class), get(ListenerManager.class).getBroadcaster(ProfileListener.class));
-    }
-
     protected PluginRegistry createPluginRegistry(ClassLoaderScopeRegistry scopeRegistry, PluginInspector pluginInspector) {
         return new DefaultPluginRegistry(pluginInspector, scopeRegistry.getCoreAndPluginsScope());
-    }
-
-    protected TaskExecutionStatisticsEventAdapter createTaskExecutionStatisticsEventAdapter(ListenerManager listenerManager) {
-        return new TaskExecutionStatisticsEventAdapter(listenerManager.getBroadcaster(TaskExecutionStatisticsListener.class));
     }
 
     protected ServiceRegistryFactory createServiceRegistryFactory(final ServiceRegistry services) {
@@ -449,23 +439,29 @@ public class BuildScopeServices extends DefaultServiceRegistry {
         return new DefaultAuthenticationSchemeRegistry();
     }
 
-    protected ToolingModelBuilderRegistry createBuildScopedToolingModelBuilders(List<BuildScopeToolingModelBuilderRegistryAction> registryActions) {
-        ToolingModelBuilderRegistry registry = new DefaultToolingModelBuilderRegistry();
+    protected ToolingModelBuilderRegistry createBuildScopedToolingModelBuilders(List<BuildScopeToolingModelBuilderRegistryAction> registryActions,
+                                                                                final BuildOperationExecutor buildOperationExecutor,
+                                                                                ProjectStateRegistry projectStateRegistry) {
+        ToolingModelBuilderRegistry registry = new DefaultToolingModelBuilderRegistry(buildOperationExecutor, projectStateRegistry);
         for (BuildScopeToolingModelBuilderRegistryAction registryAction : registryActions) {
             registryAction.execute(registry);
         }
         return registry;
     }
 
-    protected UserInputHandler createUserInputHandler(StartParameter startParameter, OutputEventListenerManager outputEventListenerManager) {
-        if (!startParameter.isInteractive()) {
+    protected UserInputHandler createUserInputHandler(BuildRequestMetaData requestMetaData, OutputEventListenerManager outputEventListenerManager, Clock clock) {
+        if (!requestMetaData.isInteractive()) {
             return new NonInteractiveUserInputHandler();
         }
 
-        return new DefaultUserInputHandler(outputEventListenerManager.getBroadcaster(), new DefaultUserInputReader());
+        return new DefaultUserInputHandler(outputEventListenerManager.getBroadcaster(), clock, new DefaultUserInputReader());
     }
 
     protected BuildScanUserInputHandler createBuildScanUserInputHandler(UserInputHandler userInputHandler) {
         return new DefaultBuildScanUserInputHandler(userInputHandler);
+    }
+
+    protected BuildInvocationDetails createBuildInvocationDetails(BuildStartedTime buildStartedTime) {
+        return new DefaultBuildInvocationDetails(buildStartedTime);
     }
 }

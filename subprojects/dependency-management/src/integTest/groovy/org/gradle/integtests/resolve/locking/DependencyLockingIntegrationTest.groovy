@@ -29,6 +29,7 @@ class DependencyLockingIntegrationTest extends AbstractDependencyResolutionTest 
         settingsFile << "rootProject.name = 'depLock'"
         resolve = new ResolveTestFixture(buildFile, "lockedConf")
         resolve.prepare()
+        resolve.addDefaultVariantDerivationStrategy()
     }
 
     def 'succeeds when lock file does not conflict from declared versions'() {
@@ -61,12 +62,15 @@ dependencies {
         succeeds 'checkDeps'
 
         then:
+        resolve.expectDefaultConfiguration('runtime')
         resolve.expectGraph {
             root(":", ":depLock:") {
                 edge("org:foo:1.+", "org:foo:1.0") {
-                    byConstraint("rejected version 1.1 because dependency was locked to version '1.0'")
+                    byReason("rejected version 1.1")
                 }
-                edge("org:foo:1.0", "org:foo:1.0")
+                constraint("org:foo:{strictly 1.0}", "org:foo:1.0") {
+                    byConstraint("dependency was locked to version '1.0'")
+                }
             }
         }
     }
@@ -107,8 +111,8 @@ dependencies {
         then:
         failure.assertHasCause """Cannot find a version of 'org:foo' that satisfies the version constraints: 
    Dependency path ':depLock:unspecified' --> 'org:foo:1.+'
-   Dependency path ':depLock:unspecified' --> 'org:foo' strictly '1.1'
-   Constraint path ':depLock:unspecified' --> 'org:foo' strictly '1.0' because of the following reason: dependency was locked to version '1.0'"""
+   Dependency path ':depLock:unspecified' --> 'org:foo:{strictly 1.1}'
+   Constraint path ':depLock:unspecified' --> 'org:foo:{strictly 1.0}' because of the following reason: dependency was locked to version '1.0'"""
     }
 
     def 'fails when lock file conflicts with declared version constraint'() {
@@ -145,7 +149,7 @@ dependencies {
         failure.assertHasCause """Cannot find a version of 'org:foo' that satisfies the version constraints: 
    Dependency path ':depLock:unspecified' --> 'org:foo:1.+'
    Dependency path ':depLock:unspecified' --> 'org:foo:1.1'
-   Constraint path ':depLock:unspecified' --> 'org:foo' strictly '1.0' because of the following reason: dependency was locked to version '1.0'"""
+   Constraint path ':depLock:unspecified' --> 'org:foo:{strictly 1.0}' because of the following reason: dependency was locked to version '1.0'"""
     }
 
     def 'fails when lock file contains entry that is not in resolution result'() {
@@ -172,13 +176,15 @@ dependencies {
 }
 """
 
-        lockfileFixture.createLockfile('lockedConf',['org:bar:1.0', 'org:foo:1.0'])
+        lockfileFixture.createLockfile('lockedConf',['org:bar:1.0', 'org:foo:1.0', 'org:baz:1.0'])
 
         when:
         fails 'checkDeps'
 
         then:
-        failure.assertHasCause("Dependency lock state for configuration 'lockedConf' is out of date: Did not resolve 'org:bar:1.0' which is part of the lock state")
+        failure.assertHasCause("Could not resolve all dependencies for configuration ':lockedConf'.")
+        failure.assertHasCause("Did not resolve 'org:bar:1.0' which is part of the dependency lock state")
+        failure.assertHasCause("Did not resolve 'org:baz:1.0' which is part of the dependency lock state")
     }
 
     def 'fails when lock file does not contain entry for module in resolution result'() {
@@ -209,10 +215,11 @@ dependencies {
         lockfileFixture.createLockfile('lockedConf',['org:foo:1.0'])
 
         when:
-        fails 'dependencies'
+        fails 'checkDeps'
 
         then:
-        failure.assertHasCause("Dependency lock state for configuration 'lockedConf' is out of date: Resolved 'org:bar:1.0' which is not part of the lock state")
+        failure.assertHasCause("Could not resolve all dependencies for configuration ':lockedConf'.")
+        failure.assertHasCause("Resolved 'org:bar:1.0' which is not part of the dependency lock state")
     }
 
     def 'fails when resolution result is empty and lock file contains entries'() {
@@ -235,10 +242,11 @@ configurations {
         lockfileFixture.createLockfile('lockedConf', ['org:foo:1.0'])
 
         when:
-        fails 'dependencies'
+        fails 'checkDeps'
 
         then:
-        failure.assertHasCause('Dependency lock state for configuration \'lockedConf\' is out of date: Did not resolve \'org:foo:1.0\' which is part of the lock state')
+        failure.assertHasCause('Could not resolve all dependencies for configuration \':lockedConf\'.')
+        failure.assertHasCause('Did not resolve \'org:foo:1.0\' which is part of the dependency lock state')
     }
 
     def 'succeeds without lock file present and does not create one'() {
@@ -333,7 +341,7 @@ dependencies {
         outputContains """lockedConf
 +--- org:foo:1.+ FAILED
 +--- org:foo:1.1 FAILED
-\\--- org:foo:1.0 FAILED"""
+\\--- org:foo:{strictly 1.0} FAILED"""
     }
 
     def 'dependency report passes with FAILED dependencies for all out lock issues'() {
@@ -373,7 +381,9 @@ dependencies {
         outputContains """lockedConf
 +--- org:foo:[1.0, 1.1] FAILED
 +--- org:foo:1.1 FAILED
-\\--- org:foo:1.0 FAILED"""
++--- org:foo:{strictly 1.0} FAILED
+\\--- org:bar:1.0 FAILED
+"""
     }
 
     def 'writes dependency lock file when requested'() {
@@ -409,9 +419,99 @@ dependencies {
 
     }
 
+    @Unroll
+    def "writes dependency lock file for resolved version #version"() {
+        mavenRepo.module('org', 'bar', '1.0').publish()
+        mavenRepo.module('org', 'bar', '1.1').publish()
+        mavenRepo.module('org', 'bar', '2.0').publish()
+        mavenRepo.module('org', 'bar', '2.1').publish()
+
+        buildFile << """
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+repositories {
+    maven {
+        url '${mavenRepo.uri}'
+    }
+}
+configurations {
+    lockedConf
+    subConf
+}
+
+dependencies {
+    lockedConf 'org:bar:${version}'
+    subConf 'org:bar:1.1'
+}
+"""
+
+        when:
+        succeeds'dependencies', '--write-locks'
+
+        then:
+        lockfileFixture.verifyLockfile('lockedConf', ["org:bar:${resolved}"])
+
+        where:
+        version     | resolved
+        "[1.0,)"    | "2.1"
+        "[1.0,2.0)" | "1.1"
+        "[1.0,2.0]" | "2.0"
+        "(,2.0)"    | "1.1"
+        "1.+"       | "1.1"
+        "+"         | "2.1"
+    }
+
+    def "version selector combinations are resolved equally for locked and unlocked configurations"() {
+        ['foo', 'foz', 'bar', 'baz'].each { artifact ->
+            mavenRepo.module('org', artifact, '1.0').publish()
+            mavenRepo.module('org', artifact, '1.1').publish()
+            mavenRepo.module('org', artifact, '1.2').publish()
+            mavenRepo.module('org', artifact, '2.0').publish()
+        }
+
+        buildFile << """
+repositories {
+    maven {
+        url '${mavenRepo.uri}'
+    }
+}
+configurations {
+    conf
+    lockEnabledConf {
+        extendsFrom conf
+        resolutionStrategy.activateDependencyLocking()
+    }
+}
+dependencies {
+    conf 'org:foo:[1.0,)'
+    conf 'org:foo:1.1'
+    
+    conf 'org:foz:latest.integration'
+    conf 'org:foz:1.1'
+    
+    conf 'org:bar:1.+'
+    conf 'org:bar:1.1'
+    
+    conf 'org:baz:+'
+    conf 'org:baz:1.1'
+}
+task check {
+    doLast {
+        assert configurations.conf*.name == configurations.lockEnabledConf*.name
+    }
+}
+"""
+
+        expect:
+        succeeds 'check'
+    }
+
     def 'upgrades lock file'() {
         mavenRepo.module('org', 'foo', '1.0').publish()
         mavenRepo.module('org', 'foo', '1.1').publish()
+        mavenRepo.module('org', 'foo', '2.0').publish()
 
         buildFile << """
 dependencyLocking {

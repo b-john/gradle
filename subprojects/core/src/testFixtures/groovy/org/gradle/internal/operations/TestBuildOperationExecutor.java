@@ -233,13 +233,23 @@ public class TestBuildOperationExecutor implements BuildOperationExecutor {
             try {
                 t = buildOperation.call(context);
             } catch (Throwable failure) {
+                if (record.result == null) {
+                    record.result = context.result;
+                }
                 if (record.failure == null) {
                     record.failure = failure;
                 }
                 throw UncheckedException.throwAsUncheckedException(failure);
             }
             record.result = context.result;
+            if (context.failure != null) {
+                record.failure = context.failure;
+            }
             return t;
         }
+    }
+
+    public void reset() {
+        log.records.clear();
     }
 }

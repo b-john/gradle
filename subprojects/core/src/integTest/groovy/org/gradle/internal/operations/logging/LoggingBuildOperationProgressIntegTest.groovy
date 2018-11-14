@@ -16,11 +16,9 @@
 
 package org.gradle.internal.operations.logging
 
+import org.gradle.api.internal.tasks.execution.ExecuteTaskBuildOperationType
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildOperationsFixture
-import org.gradle.internal.execution.ExecuteTaskBuildOperationType
-import org.gradle.internal.featurelifecycle.LoggingDeprecatedFeatureHandler
-import org.gradle.internal.featurelifecycle.LoggingIncubatingFeatureHandler
 import org.gradle.internal.logging.events.operations.LogEventBuildOperationProgressDetails
 import org.gradle.internal.logging.events.operations.ProgressStartBuildOperationProgressDetails
 import org.gradle.internal.logging.events.operations.StyledTextBuildOperationProgressDetails
@@ -117,7 +115,8 @@ class LoggingBuildOperationProgressIntegTest extends AbstractIntegrationSpec {
         applyBuildScriptProgress[0].details.category == 'org.gradle.api.Project'
         applyBuildScriptProgress[0].details.message == 'from build.gradle'
 
-        def notifyTaskGraphProgress = operations.only("Notify task graph whenReady listeners").progress
+        def notifyTaskGraph = operations.only("Notify task graph whenReady listeners")
+        def notifyTaskGraphProgress = notifyTaskGraph.children.first().progress
         notifyTaskGraphProgress.size() == 1
         notifyTaskGraphProgress[0].details.logLevel == 'WARN'
         notifyTaskGraphProgress[0].details.category == 'org.gradle.api.Project'
@@ -334,7 +333,6 @@ class LoggingBuildOperationProgressIntegTest extends AbstractIntegrationSpec {
         then:
         def progressOutputEvents = operations.all(Pattern.compile('.*')).collect { it.progress }.flatten()
         assert progressOutputEvents
-            .findAll { it.details.containsKey('category') && (it.details.category != LoggingIncubatingFeatureHandler.name && it.details.category != LoggingDeprecatedFeatureHandler.name) }
             .size() == 14 // 11 tasks + "\n" + "BUILD SUCCESSFUL" + "2 actionable tasks: 2 executed" +
     }
 

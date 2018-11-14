@@ -17,13 +17,13 @@
 package org.gradle.language.cpp.internal;
 
 import com.google.common.collect.Sets;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.component.SoftwareComponentInternal;
 import org.gradle.api.internal.component.UsageContext;
@@ -36,6 +36,7 @@ import org.gradle.language.cpp.CppSharedLibrary;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithLinkUsage;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithRuntimeUsage;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithSharedLibrary;
+import org.gradle.language.nativeplatform.internal.Names;
 import org.gradle.nativeplatform.Linkage;
 import org.gradle.nativeplatform.tasks.LinkSharedLibrary;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
@@ -47,6 +48,7 @@ import java.util.Set;
 
 public class DefaultCppSharedLibrary extends DefaultCppBinary implements CppSharedLibrary, ConfigurableComponentWithSharedLibrary, ConfigurableComponentWithLinkUsage, ConfigurableComponentWithRuntimeUsage, SoftwareComponentInternal {
     private final RegularFileProperty linkFile;
+    private final Property<Task> linkFileProducer;
     private final RegularFileProperty runtimeFile;
     private final Property<LinkSharedLibrary> linkTaskProperty;
     private final Property<Configuration> linkElements;
@@ -54,10 +56,11 @@ public class DefaultCppSharedLibrary extends DefaultCppBinary implements CppShar
     private final ConfigurableFileCollection outputs;
 
     @Inject
-    public DefaultCppSharedLibrary(String name, ProjectLayout projectLayout, ObjectFactory objectFactory, FileOperations fileOperations, Provider<String> baseName, FileCollection sourceFiles, FileCollection componentHeaderDirs, ConfigurationContainer configurations, Configuration implementation, CppPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
-        super(name, projectLayout, objectFactory, baseName, sourceFiles, componentHeaderDirs, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
-        this.linkFile = projectLayout.fileProperty();
-        this.runtimeFile = projectLayout.fileProperty();
+    public DefaultCppSharedLibrary(Names names, ObjectFactory objectFactory, FileOperations fileOperations, Provider<String> baseName, FileCollection sourceFiles, FileCollection componentHeaderDirs, ConfigurationContainer configurations, Configuration implementation, CppPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
+        super(names, objectFactory, baseName, sourceFiles, componentHeaderDirs, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
+        this.linkFile = objectFactory.fileProperty();
+        this.linkFileProducer = objectFactory.property(Task.class);
+        this.runtimeFile = objectFactory.fileProperty();
         this.linkTaskProperty = objectFactory.property(LinkSharedLibrary.class);
         this.linkElements = objectFactory.property(Configuration.class);
         this.runtimeElements = objectFactory.property(Configuration.class);
@@ -72,6 +75,11 @@ public class DefaultCppSharedLibrary extends DefaultCppBinary implements CppShar
     @Override
     public RegularFileProperty getLinkFile() {
         return linkFile;
+    }
+
+    @Override
+    public Property<Task> getLinkFileProducer() {
+        return linkFileProducer;
     }
 
     @Override

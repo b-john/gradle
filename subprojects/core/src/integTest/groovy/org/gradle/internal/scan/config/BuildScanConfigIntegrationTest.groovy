@@ -39,7 +39,6 @@ class BuildScanConfigIntegrationTest extends AbstractIntegrationSpec {
         """
     }
 
-
     def "enabled and disabled are false with no flags"() {
         when:
         succeeds "t"
@@ -190,55 +189,28 @@ class BuildScanConfigIntegrationTest extends AbstractIntegrationSpec {
         description = applied ? "applied" : "not applied"
     }
 
-    def "fails when VCS mappings are being used and plugin is too old"() {
+    def "conveys that is task executing build"() {
         given:
-        scanPlugin.runtimeVersion = "1.10"
-        installVcsMappings()
-
-        when:
-        fails "t"
-
-        then:
-        failureCauseContains(BuildScanPluginCompatibility.UNSUPPORTED_VCS_MAPPINGS_MESSAGE)
-    }
-
-    def "conveys when VCS mappings are being used and plugin is not too old"() {
-        given:
-        scanPlugin.runtimeVersion = "1.11"
-        installVcsMappings()
+        scanPlugin.collectConfig = true
 
         when:
         succeeds "t"
 
         then:
-        scanPlugin.assertUnsupportedMessage(output, null)
-        scanPlugin.attributes(output).rootProjectHasVcsMappings
+        with(scanPlugin.attributes(output)) {
+            isTaskExecutingBuild()
+        }
     }
 
     def "can convey unsupported to plugin that supports it"() {
         given:
-        scanPlugin.runtimeVersion = "1.11"
+        scanPlugin.runtimeVersion = "3.0"
         when:
         succeeds "t", "-D${BuildScanPluginCompatibility.UNSUPPORTED_TOGGLE}=true"
 
         then:
         scanPlugin.assertUnsupportedMessage(output, BuildScanPluginCompatibility.UNSUPPORTED_TOGGLE_MESSAGE)
         scanPlugin.attributes(output) != null
-    }
-
-    void installVcsMappings() {
-        settingsFile.text = """
-            sourceControl {
-                vcsMappings {
-                    withModule('external-source:artifact') {
-                        from(GitVersionControlSpec) {
-                            // not actually used, doesn't need a real repo
-                        }
-                    }
-                }
-            }
-
-        """
     }
 
     void assertFailedVersionCheck() {

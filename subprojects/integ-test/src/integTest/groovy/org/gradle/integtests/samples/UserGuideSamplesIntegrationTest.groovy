@@ -16,13 +16,16 @@
 
 package org.gradle.integtests.samples
 
+import org.gradle.integtests.fixtures.executer.MoreMemorySampleModifier
 import org.gradle.integtests.fixtures.logging.ArtifactResolutionOmittingOutputNormalizer
 import org.gradle.integtests.fixtures.logging.NativeComponentReportOutputNormalizer
 import org.gradle.integtests.fixtures.logging.PlayComponentReportOutputNormalizer
 import org.gradle.integtests.fixtures.logging.SampleOutputNormalizer
+import org.gradle.integtests.fixtures.mirror.SetMirrorsSampleModifier
 import org.gradle.samples.test.normalizer.FileSeparatorOutputNormalizer
 import org.gradle.samples.test.normalizer.JavaObjectSerializationOutputNormalizer
 import org.gradle.samples.test.runner.GradleSamplesRunner
+import org.gradle.samples.test.runner.SampleModifiers
 import org.gradle.samples.test.runner.SamplesOutputNormalizers
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
@@ -38,6 +41,7 @@ import org.junit.runner.RunWith
     NativeComponentReportOutputNormalizer.class,
     PlayComponentReportOutputNormalizer.class
 ])
+@SampleModifiers([SetMirrorsSampleModifier, MoreMemorySampleModifier])
 class UserGuideSamplesIntegrationTest {
     /*
     Important info: This test uses Exemplar (https://github.com/gradle/exemplar/) to discover and check samples.

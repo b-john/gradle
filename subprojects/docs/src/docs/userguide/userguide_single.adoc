@@ -29,16 +29,26 @@ toc::[]
 
 include::overview.adoc[leveloffset=+2]
 
+include::what_is_gradle.adoc[leveloffset=+2]
+
 == Getting Started
+
+include::getting_started.adoc[leveloffset=2]
 
 include::installation.adoc[leveloffset=+2]
 
+include::kotlin_dsl.adoc[leveloffset=+2]
+
+include::upgrading_version_5.adoc[leveloffset=+2]
+include::upgrading_version_4.adoc[leveloffset=+2]
 
 == Using Gradle Builds
 
 include::command_line_interface.adoc[leveloffset=+2]
 
 include::build_environment.adoc[leveloffset=+2]
+
+include::directory_layout.adoc[leveloffset=+2]
 
 include::gradle_daemon.adoc[leveloffset=+2]
 
@@ -120,6 +130,8 @@ include::dependency_cache.adoc[leveloffset=+2]
 
 include::working_with_dependencies.adoc[leveloffset=+2]
 
+include::dependency_management_attribute_based_matching.adoc[leveloffset=+2]
+
 
 == Publishing Artifacts
 
@@ -197,11 +209,11 @@ include::pmd_plugin.adoc[leveloffset=+2]
 
 == Java Web Projects
 
+include::war_plugin.adoc[leveloffset=+2]
+
 include::ear_plugin.adoc[leveloffset=+2]
 
 include::play_plugin.adoc[leveloffset=+2]
-
-include::war_plugin.adoc[leveloffset=+2]
 
 
 == Scala Projects
@@ -226,7 +238,12 @@ include::java_gradle_plugin.adoc[leveloffset=+2]
 
 include::lazy_configuration.adoc[leveloffset=+2]
 
+== Reference
 
-== Licenses
+include::plugin_reference.adoc[leveloffset=2]
+
+include::third_party_integration.adoc[leveloffset=2]
+
+== License Information
 
 include::licenses.adoc[leveloffset=+1]

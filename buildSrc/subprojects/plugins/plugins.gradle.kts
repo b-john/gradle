@@ -1,12 +1,3 @@
-import org.gradle.kotlin.dsl.plugins.precompiled.PrecompiledScriptPlugins
-
-plugins {
-    `java-gradle-plugin`
-}
-
-apply(plugin = "org.gradle.kotlin.kotlin-dsl")
-apply<PrecompiledScriptPlugins>()
-
 dependencies {
     implementation(project(":binaryCompatibility"))
     implementation(project(":build"))
@@ -14,8 +5,7 @@ dependencies {
     implementation(project(":kotlinDsl"))
     implementation(project(":versioning"))
     implementation(project(":performance"))
-    implementation("org.pegdown:pegdown:1.6.0")
-    implementation("org.jsoup:jsoup:1.11.2")
+    implementation("org.jsoup:jsoup:1.11.3")
     implementation("com.google.guava:guava-jdk5:14.0.1")
     implementation("org.ow2.asm:asm:6.0")
     implementation("org.ow2.asm:asm-commons:6.0")
@@ -25,16 +15,16 @@ dependencies {
 }
 
 gradlePlugin {
-    (plugins) {
-        "buildTypes" {
+    plugins {
+        register("buildTypes") {
             id = "gradlebuild.build-types"
             implementationClass = "org.gradle.plugins.buildtypes.BuildTypesPlugin"
         }
-        "performanceTest" {
+        register("performanceTest") {
             id = "gradlebuild.performance-test"
             implementationClass = "org.gradle.plugins.performance.PerformanceTestPlugin"
         }
-        "unitTestAndCompile" {
+        register("unitTestAndCompile") {
             id = "gradlebuild.unittest-and-compile"
             implementationClass = "org.gradle.gradlebuild.unittestandcompile.UnitTestAndCompilePlugin"
         }

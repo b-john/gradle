@@ -49,6 +49,12 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
     }
 
     @Override
+    protected List<String> getTasksToAssembleDevelopmentBinaryWithArchitecture(String architecture) {
+        String variantSuffix = getVariantSuffix(architecture)
+        return [":compileDebug${variantSuffix}Cpp", ":linkDebug${variantSuffix}", ":installDebug${variantSuffix}"]
+    }
+
+    @Override
     protected String getDevelopmentBinaryCompileTask() {
         return ":compileDebugCpp"
     }
@@ -394,6 +400,75 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries("hello")
     }
 
+    def "can compile and link against a library when specifying multiple target machines"() {
+        settingsFile << "include 'app', 'hello'"
+        def app = new CppAppWithLibrary()
+
+        given:
+        buildFile << """
+            project(':app') {
+                apply plugin: 'cpp-application'
+                application {
+                    targetMachines = [machines.host()${currentHostArchitectureDsl}, machines.os('host-family')]
+                }
+                dependencies {
+                    implementation project(':hello')
+                }
+            }
+            project(':hello') {
+                apply plugin: 'cpp-library'
+                library {
+                    targetMachines = [machines.host()${currentHostArchitectureDsl}, machines.os('host-family')]
+                }
+            }
+        """
+        app.greeter.writeToProject(file("hello"))
+        app.main.writeToProject(file("app"))
+
+        expect:
+        succeeds ":app:assemble"
+
+        result.assertTasksExecuted(tasks(':hello').withArchitecture(currentArchitecture).debug.allToLink, tasks(':app').withArchitecture(currentArchitecture).debug.allToInstall, ":app:assemble")
+        executable("app/build/exe/main/debug/${currentOsFamilyName.toLowerCase()}/${currentArchitecture}/app").assertExists()
+        sharedLibrary("hello/build/lib/main/debug/${currentOsFamilyName.toLowerCase()}/${currentArchitecture}/hello").assertExists()
+        def installation = installation("app/build/install/main/debug/${currentOsFamilyName.toLowerCase()}/${currentArchitecture}")
+        installation.exec().out == app.expectedOutput
+        installation.assertIncludesLibraries("hello")
+    }
+
+    def "fails when dependency library does not specify the same target machines"() {
+        settingsFile << "include 'app', 'hello'"
+        def app = new CppAppWithLibrary()
+
+        given:
+        buildFile << """
+            project(':app') {
+                apply plugin: 'cpp-application'
+                application {
+                    targetMachines = [machines.host()${currentHostArchitectureDsl}]
+                }
+                dependencies {
+                    implementation project(':hello')
+                }
+            }
+            project(':hello') {
+                apply plugin: 'cpp-library'
+                library {
+                    targetMachines = [machines.host().architecture('foo')]
+                }
+            }
+        """
+        app.greeter.writeToProject(file("hello"))
+        app.main.writeToProject(file("app"))
+
+        expect:
+        fails ":app:assemble"
+
+        and:
+        failure.assertHasCause("Could not resolve project :hello")
+        failure.assertHasErrorOutput("Required org.gradle.native.architecture '${currentArchitecture}' and found incompatible value 'foo'.")
+    }
+
     def "can directly depend on generated sources on includePath"() {
         settingsFile << "rootProject.name = 'app'"
 
@@ -410,9 +485,11 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             apply plugin: 'cpp-application'
             
+            def headerDirectory = objects.directoryProperty()
+            
             task generateHeader {
-                ext.headerDirectory = newOutputDirectory()
-                headerDirectory.set(project.layout.buildDirectory.dir("headers"))
+                outputs.dir(headerDirectory)
+                headerDirectory.set(layout.buildDirectory.dir("headers"))
                 doLast {
                     def fooH = headerDirectory.file("foo.h").get().asFile
                     fooH.parentFile.mkdirs()
@@ -423,7 +500,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
             }
             
             application.binaries.whenElementFinalized { binary ->
-                def dependency = project.dependencies.create(files(generateHeader.headerDirectory))
+                def dependency = project.dependencies.create(files(headerDirectory))
                 binary.getIncludePathConfiguration().dependencies.add(dependency)
             }
          """
@@ -432,7 +509,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         succeeds "compileDebug"
     }
 
-    def "can compile and link against a library with explicit operating system family defined"() {
+    def "can compile and link against a library with explicit target machine defined"() {
         settingsFile << "include 'app', 'hello'"
         def app = new CppAppWithLibrary()
 
@@ -444,13 +521,13 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
                     dependencies {
                         implementation project(':hello')
                     }
-                    operatingSystems = [objects.named(OperatingSystemFamily, '${currentOsFamilyName}')]
+                    targetMachines = [machines.os('${currentOsFamilyName}').architecture('${currentArchitecture}')]
                 }
             }
             project(':hello') {
                 apply plugin: 'cpp-library'
                 library {
-                    operatingSystems = [objects.named(OperatingSystemFamily, '${currentOsFamilyName}')]
+                    targetMachines = [machines.os('${currentOsFamilyName}').architecture('${currentArchitecture}')]
                 }
             }
         """
@@ -480,13 +557,13 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
                     dependencies {
                         implementation project(':hello')
                     }
-                    operatingSystems = [objects.named(OperatingSystemFamily, '${currentOsFamilyName}')]
+                    targetMachines = [machines.os('${currentOsFamilyName}').architecture('${currentArchitecture}')]
                 }
             }
             project(':hello') {
                 apply plugin: 'cpp-library'
                 library {
-                    operatingSystems = [objects.named(OperatingSystemFamily, 'some-other-family')]
+                    targetMachines = [machines.os('some-other-family').architecture('${currentArchitecture}')]
                 }
             }
         """
@@ -497,6 +574,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         fails ":app:assemble"
 
         failure.assertHasCause """Unable to find a matching variant of project :hello: Variant 'cppApiElements':
+  - Required org.gradle.native.architecture '${currentArchitecture}' but no value provided.
   - Required org.gradle.native.debuggable 'true' but no value provided.
   - Required org.gradle.native.operatingSystem '${currentOsFamilyName}' but no value provided.
   - Required org.gradle.native.optimized 'false' but no value provided.

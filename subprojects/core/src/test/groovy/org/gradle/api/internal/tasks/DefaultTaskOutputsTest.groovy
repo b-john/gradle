@@ -16,9 +16,6 @@
 package org.gradle.api.internal.tasks
 
 import com.google.common.collect.ImmutableSortedSet
-import org.gradle.api.GradleException
-import org.gradle.api.internal.OverlappingOutputs
-import org.gradle.api.internal.TaskExecutionHistory
 import org.gradle.api.internal.TaskInputsInternal
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.file.FileResolver
@@ -28,6 +25,8 @@ import org.gradle.api.internal.tasks.execution.TaskProperties
 import org.gradle.api.internal.tasks.properties.DefaultPropertyMetadataStore
 import org.gradle.api.internal.tasks.properties.DefaultPropertyWalker
 import org.gradle.api.internal.tasks.properties.PropertyVisitor
+import org.gradle.cache.internal.TestCrossBuildInMemoryCacheFactory
+import org.gradle.util.DeferredUtil
 import org.gradle.util.UsesNativeServices
 import spock.lang.Issue
 import spock.lang.Specification
@@ -35,8 +34,8 @@ import spock.lang.Unroll
 
 import java.util.concurrent.Callable
 
-import static OutputType.DIRECTORY
-import static OutputType.FILE
+import static org.gradle.internal.file.TreeType.DIRECTORY
+import static org.gradle.internal.file.TreeType.FILE
 
 @UsesNativeServices
 class DefaultTaskOutputsTest extends Specification {
@@ -51,9 +50,9 @@ class DefaultTaskOutputsTest extends Specification {
         }
     }
     def resolver = [
-        resolve: { new File(it) },
+        resolve: { String it -> new File(it) },
         resolveFiles: { it ->
-            ImmutableFileCollection.of(it*.call().flatten().collect { new File((String) it) } as File[])
+            ImmutableFileCollection.of(it.collect { DeferredUtil.unpack(it) }.flatten().collect { new File((String) it) })
         }
     ]   as FileResolver
     def project = Stub(ProjectInternal) {
@@ -64,12 +63,14 @@ class DefaultTaskOutputsTest extends Specification {
         hasDeclaredOutputs() >> false
     }
     def taskPropertiesWithOutput = Mock(TaskProperties) {
-        getOutputFileProperties() >> ImmutableSortedSet.of(Mock(TaskOutputFilePropertySpec))
+        getOutputFileProperties() >> ImmutableSortedSet.of(Mock(TaskOutputFilePropertySpec) {
+            getPropertyName() >> "prop"
+        })
         hasDeclaredOutputs() >> true
     }
-    def taskPropertiesWithPluralOutput = Mock(TaskProperties) {
-        getOutputFileProperties() >> ImmutableSortedSet.of(Mock(NonCacheableTaskOutputPropertySpec) {
-            getOriginalPropertyName() >> "\$1"
+    def taskPropertiesWithCacheableOutput = Mock(TaskProperties) {
+        getOutputFileProperties() >> ImmutableSortedSet.of(Mock(CacheableTaskOutputFilePropertySpec) {
+            getPropertyName() >> "prop"
         })
         hasDeclaredOutputs() >> true
     }
@@ -84,7 +85,7 @@ class DefaultTaskOutputsTest extends Specification {
         getLocalState() >> Stub(TaskLocalStateInternal)
     }
 
-    private final DefaultTaskOutputs outputs = new DefaultTaskOutputs(task, taskStatusNagger, new DefaultPropertyWalker(new DefaultPropertyMetadataStore([])), new DefaultPropertySpecFactory(task, resolver))
+    private final DefaultTaskOutputs outputs = new DefaultTaskOutputs(task, taskStatusNagger, new DefaultPropertyWalker(new DefaultPropertyMetadataStore([], new TestCrossBuildInMemoryCacheFactory())), new DefaultPropertySpecFactory(task, resolver))
 
     void hasNoOutputsByDefault() {
         setup:
@@ -94,7 +95,7 @@ class DefaultTaskOutputsTest extends Specification {
 
     void outputFileCollectionIsBuiltByTask() {
         setup:
-        assert outputs.files.buildDependencies.getDependencies(task) == [task] as Set
+        assert outputs.files.buildDependencies.getDependencies(task).toList() == [task]
     }
 
     def "can register output file"() {
@@ -151,7 +152,7 @@ class DefaultTaskOutputsTest extends Specification {
         when: outputs.files("a", "b")
         then:
         outputs.files.files.toList() == [new File('a'), new File("b")]
-        outputs.fileProperties*.propertyName == ['$1$1']
+        outputs.fileProperties*.propertyName == ['$1$1', '$1$2']
         outputs.fileProperties*.propertyFiles*.files.flatten() == [new File("a"), new File("b")]
     }
 
@@ -159,7 +160,7 @@ class DefaultTaskOutputsTest extends Specification {
         when: outputs.files("a", "b").withPropertyName("prop")
         then:
         outputs.files.files.toList() == [new File('a'), new File("b")]
-        outputs.fileProperties*.propertyName == ['prop$1']
+        outputs.fileProperties*.propertyName == ['prop$1', 'prop$2']
         outputs.fileProperties*.propertyFiles*.files.flatten() == [new File("a"), new File("b")]
     }
 
@@ -232,29 +233,6 @@ class DefaultTaskOutputsTest extends Specification {
         "dirs"  | DIRECTORY
     }
 
-    def "error message contains which cacheIf spec failed to evaluate"() {
-        outputs.cacheIf("Exception is thrown") { throw new RuntimeException() }
-
-        when:
-        outputs.getCachingState(taskPropertiesWithOutput)
-
-        then:
-        GradleException e = thrown()
-        e.message.contains("Could not evaluate spec for 'Exception is thrown'.")
-    }
-
-    def "error message contains which doNotCacheIf spec failed to evaluate"() {
-        outputs.cacheIf { true }
-        outputs.doNotCacheIf("Exception is thrown") { throw new RuntimeException() }
-
-        when:
-        outputs.getCachingState(taskPropertiesWithOutput)
-
-        then:
-        GradleException e = thrown()
-        e.message.contains("Could not evaluate spec for 'Exception is thrown'.")
-    }
-
     @Issue("https://github.com/gradle/gradle/issues/4085")
     @Unroll
     def "can register more unnamed properties with method #method after properties have been queried"() {
@@ -324,146 +302,6 @@ class DefaultTaskOutputsTest extends Specification {
 
         then:
         outputs.upToDateSpec.isSatisfiedBy(task)
-    }
-
-    def "can turn caching on via cacheIf()"() {
-        expect:
-        !outputs.getCachingState(taskPropertiesWithOutput).enabled
-
-        when:
-        outputs.cacheIf { true }
-        then:
-        outputs.getCachingState(taskPropertiesWithOutput).enabled
-    }
-
-    def "can turn caching off via cacheIf()"() {
-        expect:
-        !outputs.getCachingState(taskPropertiesWithOutput).enabled
-
-        when:
-        outputs.cacheIf { true }
-        then:
-        outputs.getCachingState(taskPropertiesWithOutput).enabled
-
-        when:
-        outputs.cacheIf { false }
-        then:
-        !outputs.getCachingState(taskPropertiesWithOutput).enabled
-
-        when:
-        outputs.cacheIf { true }
-        then:
-        !outputs.getCachingState(taskPropertiesWithOutput).enabled
-    }
-
-    def "can turn caching off via doNotCacheIf()"() {
-        expect:
-        !outputs.getCachingState(taskPropertiesWithOutput).enabled
-
-        when:
-        outputs.doNotCacheIf("test") { false }
-        then:
-        !outputs.getCachingState(taskPropertiesWithOutput).enabled
-
-        when:
-        outputs.cacheIf { true }
-        then:
-        outputs.getCachingState(taskPropertiesWithOutput).enabled
-
-        when:
-        outputs.doNotCacheIf("test") { true }
-        then:
-        !outputs.getCachingState(taskPropertiesWithOutput).enabled
-    }
-
-    def "first reason for not caching is reported"() {
-        def cachingState = outputs.getCachingState(taskPropertiesWithNoOutputs)
-
-        expect:
-        !cachingState.enabled
-        cachingState.disabledReason == "Caching has not been enabled for the task"
-        cachingState.disabledReasonCategory == TaskOutputCachingDisabledReasonCategory.NOT_ENABLED_FOR_TASK
-
-        when:
-        outputs.cacheIf { true }
-        cachingState = outputs.getCachingState(taskPropertiesWithNoOutputs)
-
-        then:
-        !cachingState.enabled
-        cachingState.disabledReason == "No outputs declared"
-        cachingState.disabledReasonCategory == TaskOutputCachingDisabledReasonCategory.NO_OUTPUTS_DECLARED
-
-        when:
-        cachingState = outputs.getCachingState(taskPropertiesWithOutput)
-        then:
-        cachingState.enabled
-
-        when:
-        def taskHistory = Mock(TaskExecutionHistory)
-        outputs.setHistory(taskHistory)
-        taskHistory.getOverlappingOutputs() >> new OverlappingOutputs("someProperty", "path/to/outputFile")
-        cachingState = outputs.getCachingState(taskPropertiesWithOutput)
-        then:
-        project.relativePath(_) >> 'relative/path/to/outputFile'
-        !cachingState.enabled
-        cachingState.disabledReason == "Gradle does not know how file 'relative/path/to/outputFile' was created (output property 'someProperty'). Task output caching requires exclusive access to output paths to guarantee correctness."
-        cachingState.disabledReasonCategory == TaskOutputCachingDisabledReasonCategory.OVERLAPPING_OUTPUTS
-
-        when:
-        outputs.setHistory(null)
-        outputs.doNotCacheIf("Caching manually disabled") { true }
-        cachingState = outputs.getCachingState(taskPropertiesWithOutput)
-
-        then:
-        !cachingState.enabled
-        cachingState.disabledReason == "'Caching manually disabled' satisfied"
-        cachingState.disabledReasonCategory == TaskOutputCachingDisabledReasonCategory.DO_NOT_CACHE_IF_SPEC_SATISFIED
-
-        when:
-        outputs.cacheIf("on CI") { false }
-        cachingState = outputs.getCachingState(taskPropertiesWithOutput)
-
-        then:
-        !cachingState.enabled
-        cachingState.disabledReason == "'on CI' not satisfied"
-        cachingState.disabledReasonCategory == TaskOutputCachingDisabledReasonCategory.CACHE_IF_SPEC_NOT_SATISFIED
-    }
-
-    def "report no reason if the task is cacheable"() {
-        when:
-        outputs.cacheIf { true }
-        def cachingState = outputs.getCachingState(taskPropertiesWithOutput)
-
-        then:
-        cachingState.enabled
-        cachingState.disabledReason == null
-        cachingState.disabledReasonCategory == null
-    }
-
-    def "disabling caching for plural file outputs is reported"() {
-        when:
-        outputs.cacheIf { true }
-        def cachingState = outputs.getCachingState(taskPropertiesWithPluralOutput)
-
-        then:
-        !cachingState.enabled
-        cachingState.disabledReason == "Declares multiple output files for the single output property '\$1' via `@OutputFiles`, `@OutputDirectories` or `TaskOutputs.files()`"
-        cachingState.disabledReasonCategory == TaskOutputCachingDisabledReasonCategory.PLURAL_OUTPUTS
-    }
-
-    void getPreviousFilesDelegatesToTaskHistory() {
-        def history = Mock(TaskExecutionHistory)
-        Set<File> outputFiles = [new File("some-file")] as Set
-
-        setup:
-        outputs.history = history
-
-        when:
-        def f = outputs.previousOutputFiles
-
-        then:
-        f == outputFiles
-        1 * history.outputFiles >> outputFiles
     }
 
     void getPreviousFilesFailsWhenNoTaskHistoryAvailable() {

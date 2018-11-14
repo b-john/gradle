@@ -42,7 +42,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
     }
 
     @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_4)
-    def "throws exception when modifying Swift component source compatibility after the binaries are known"() {
+    def "throws exception when modifying Swift component source compatibility after the binary source compatibility is queried"() {
         given:
         makeSingleProject()
         buildFile << """
@@ -51,6 +51,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
             }
 
             ${componentUnderTestDsl}.binaries.whenElementKnown {
+                assert it.sourceCompatibility.get() == SwiftVersion.SWIFT3
                 ${componentUnderTestDsl}.sourceCompatibility = SwiftVersion.SWIFT4
             }
 
@@ -61,7 +62,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         expect:
         fails "verifyBinariesSwiftVersion"
         failure.assertHasDescription("A problem occurred configuring root project 'swift-project'.")
-        failure.assertHasCause("This property is locked and cannot be changed.")
+        failure.assertHasCause("The value for this property is final and cannot be changed any further.")
     }
 
     @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_4)
@@ -167,6 +168,42 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
 
         then:
         result.assertTasksExecuted(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+    }
+
+    def "ignores compile and link tasks when current operating system family is excluded"() {
+        given:
+        makeSingleProject()
+        swift4Component.writeToProject(testDirectory)
+
+        and:
+        buildFile << """
+            ${componentUnderTestDsl} {
+                targetMachines = [machines.os('some-other-family')]
+            }
+        """
+
+        expect:
+        succeeds taskNameToAssembleDevelopmentBinary
+        result.assertTasksExecuted(":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksSkipped(":$taskNameToAssembleDevelopmentBinary")
+    }
+
+    def "fails configuration when no target machine is configured"() {
+        given:
+        makeSingleProject()
+        swift4Component.writeToProject(testDirectory)
+
+        and:
+        buildFile << """
+            ${componentUnderTestDsl} {
+                targetMachines = []
+            }
+        """
+
+        expect:
+        fails taskNameToAssembleDevelopmentBinary
+        failure.assertHasDescription("A problem occurred configuring root project '${testDirectory.name}'.")
+        failure.assertHasCause("A target machine needs to be specified")
     }
 
     abstract String getDevelopmentBinaryCompileTask()

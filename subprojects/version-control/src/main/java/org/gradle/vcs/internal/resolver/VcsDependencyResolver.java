@@ -21,8 +21,8 @@ import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.internal.BuildDefinition;
-import org.gradle.api.internal.artifacts.ResolvedVersionConstraint;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ComponentResolvers;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelector;
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.LocalComponentRegistry;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ArtifactSet;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusion;
@@ -35,6 +35,7 @@ import org.gradle.internal.Pair;
 import org.gradle.internal.build.BuildState;
 import org.gradle.internal.build.BuildStateRegistry;
 import org.gradle.internal.build.IncludedBuildState;
+import org.gradle.internal.build.PublicBuildPath;
 import org.gradle.internal.component.local.model.LocalComponentMetadata;
 import org.gradle.internal.component.model.ComponentArtifactMetadata;
 import org.gradle.internal.component.model.ComponentOverrideMetadata;
@@ -70,19 +71,21 @@ public class VcsDependencyResolver implements DependencyToComponentIdResolver, C
     private final VersionControlRepositoryConnectionFactory versionControlSystemFactory;
     private final VcsVersionWorkingDirResolver workingDirResolver;
     private final BuildState containingBuild;
+    private final PublicBuildPath publicBuildPath;
     private final BuildStateRegistry buildRegistry;
 
-    public VcsDependencyResolver(LocalComponentRegistry localComponentRegistry, VcsResolver vcsResolver, VersionControlRepositoryConnectionFactory versionControlSystemFactory, BuildStateRegistry buildRegistry, VcsVersionWorkingDirResolver workingDirResolver, BuildState containingBuild) {
+    public VcsDependencyResolver(LocalComponentRegistry localComponentRegistry, VcsResolver vcsResolver, VersionControlRepositoryConnectionFactory versionControlSystemFactory, BuildStateRegistry buildRegistry, VcsVersionWorkingDirResolver workingDirResolver, BuildState containingBuild, PublicBuildPath publicBuildPath) {
         this.localComponentRegistry = localComponentRegistry;
         this.vcsResolver = vcsResolver;
         this.versionControlSystemFactory = versionControlSystemFactory;
         this.buildRegistry = buildRegistry;
         this.workingDirResolver = workingDirResolver;
         this.containingBuild = containingBuild;
+        this.publicBuildPath = publicBuildPath;
     }
 
     @Override
-    public void resolve(DependencyMetadata dependency, ResolvedVersionConstraint versionConstraint, BuildableComponentIdResolveResult result) {
+    public void resolve(DependencyMetadata dependency, VersionSelector acceptor, VersionSelector rejector, BuildableComponentIdResolveResult result) {
         if (dependency.getSelector() instanceof ModuleComponentSelector) {
             final ModuleComponentSelector depSelector = (ModuleComponentSelector) dependency.getSelector();
             VersionControlSpec spec = vcsResolver.locateVcsFor(depSelector);
@@ -127,7 +130,7 @@ public class VcsDependencyResolver implements DependencyToComponentIdResolver, C
 
     private BuildDefinition toBuildDefinition(AbstractVersionControlSpec spec, File buildDirectory) {
         InjectedPluginResolver resolver = new InjectedPluginResolver(containingBuild.getLoadedSettings().getClassLoaderScope());
-        return BuildDefinition.fromStartParameterForBuild(buildRegistry.getRootBuild().getStartParameter(), buildDirectory, resolver.resolveAll(spec.getInjectedPlugins()));
+        return BuildDefinition.fromStartParameterForBuild(buildRegistry.getRootBuild().getStartParameter(), null, buildDirectory, resolver.resolveAll(spec.getInjectedPlugins()), publicBuildPath);
     }
 
     @Override

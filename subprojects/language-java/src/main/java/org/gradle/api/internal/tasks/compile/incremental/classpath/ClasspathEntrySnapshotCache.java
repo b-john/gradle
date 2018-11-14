@@ -20,12 +20,10 @@ import org.gradle.cache.internal.Cache;
 import org.gradle.internal.hash.HashCode;
 
 import java.io.File;
-import java.util.Map;
 
 public interface ClasspathEntrySnapshotCache extends Cache<File, ClasspathEntrySnapshot> {
     /**
-     * Returns the classpath entry snapshots for the given files. The resulting map has the same order as the input.
-     * Fails if no cached data could be found for any of the given files.
+     * Finds the snapshot associated with the file at the time it had the given hash code. May return null if no snapshot was found in the cache.
      */
-    Map<File, ClasspathEntrySnapshot> getClasspathEntrySnapshots(Map<File, HashCode> fileHashes);
+    ClasspathEntrySnapshot get(File file, HashCode hash);
 }

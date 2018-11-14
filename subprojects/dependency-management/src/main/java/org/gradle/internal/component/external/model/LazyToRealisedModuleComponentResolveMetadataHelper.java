@@ -18,19 +18,19 @@ package org.gradle.internal.component.external.model;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.capabilities.CapabilitiesMetadata;
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
+import org.gradle.api.internal.artifacts.dsl.dependencies.PlatformSupport;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.internal.component.external.descriptor.Configuration;
 import org.gradle.internal.component.model.ExcludeMetadata;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Utility class to help transform a lazy {@link ModuleComponentResolveMetadata} into a realised one.
@@ -45,11 +45,15 @@ public class LazyToRealisedModuleComponentResolveMetadataHelper {
      * @return a list of realised variants
      */
     public static ImmutableList<AbstractRealisedModuleComponentResolveMetadata.ImmutableRealisedVariantImpl> realiseVariants(ModuleComponentResolveMetadata mutableMetadata, VariantMetadataRules variantMetadataRules, ImmutableList<? extends ComponentVariant> variants) {
+        if (variants.isEmpty()) {
+            return ImmutableList.of();
+        }
         List<AbstractRealisedModuleComponentResolveMetadata.ImmutableRealisedVariantImpl> realisedVariants = Lists.newArrayListWithExpectedSize(variants.size());
         for (ComponentVariant variant : variants) {
             ImmutableAttributes attributes = variantMetadataRules.applyVariantAttributeRules(variant, variant.getAttributes());
             CapabilitiesMetadata capabilitiesMetadata = variantMetadataRules.applyCapabilitiesRules(variant, variant.getCapabilities());
-            List<GradleDependencyMetadata> dependencies = variantMetadataRules.applyDependencyMetadataRules(variant, convertDependencies(variant.getDependencies(), variant.getDependencyConstraints()));
+            boolean force = PlatformSupport.hasForcedDependencies(variant);
+            List<GradleDependencyMetadata> dependencies = variantMetadataRules.applyDependencyMetadataRules(variant, convertDependencies(variant.getDependencies(), variant.getDependencyConstraints(), force));
             realisedVariants.add(new AbstractRealisedModuleComponentResolveMetadata.ImmutableRealisedVariantImpl(mutableMetadata.getId(), variant.getName(), attributes,
                 variant.getDependencies(), variant.getDependencyConstraints(), variant.getFiles(),
                 ImmutableCapabilities.of(capabilitiesMetadata.getCapabilities()), dependencies));
@@ -57,34 +61,35 @@ public class LazyToRealisedModuleComponentResolveMetadataHelper {
         return ImmutableList.copyOf(realisedVariants);
     }
 
-    private static List<GradleDependencyMetadata> convertDependencies(List<? extends ComponentVariant.Dependency> dependencies, List<? extends ComponentVariant.DependencyConstraint> dependencyConstraints) {
+    private static List<GradleDependencyMetadata> convertDependencies(List<? extends ComponentVariant.Dependency> dependencies, List<? extends ComponentVariant.DependencyConstraint> dependencyConstraints, boolean force) {
         List<GradleDependencyMetadata> result = new ArrayList<GradleDependencyMetadata>(dependencies.size());
         for (ComponentVariant.Dependency dependency : dependencies) {
             ModuleComponentSelector selector = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId(dependency.getGroup(), dependency.getModule()), dependency.getVersionConstraint(), dependency.getAttributes());
             List<ExcludeMetadata> excludes = dependency.getExcludes();
-            result.add(new GradleDependencyMetadata(selector, excludes, false, dependency.getReason()));
+            result.add(new GradleDependencyMetadata(selector, excludes, false, dependency.getReason(), force));
         }
         for (ComponentVariant.DependencyConstraint dependencyConstraint : dependencyConstraints) {
             result.add(new GradleDependencyMetadata(
                 DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId(dependencyConstraint.getGroup(), dependencyConstraint.getModule()), dependencyConstraint.getVersionConstraint(), dependencyConstraint.getAttributes()),
                 Collections.<ExcludeMetadata>emptyList(),
                 true,
-                dependencyConstraint.getReason()
+                dependencyConstraint.getReason(),
+                force
             ));
         }
         return result;
     }
 
-    public static ImmutableList<String> constructHierarchy(Configuration descriptorConfiguration, ImmutableMap<String, Configuration> configurationDefinitions) {
+    public static ImmutableSet<String> constructHierarchy(Configuration descriptorConfiguration, ImmutableMap<String, Configuration> configurationDefinitions) {
         if (descriptorConfiguration.getExtendsFrom().isEmpty()) {
-            return ImmutableList.of(descriptorConfiguration.getName());
+            return ImmutableSet.of(descriptorConfiguration.getName());
         }
-        Set<String> accumulator = new LinkedHashSet<String>();
+        ImmutableSet.Builder<String> accumulator = new ImmutableSet.Builder<String>();
         populateHierarchy(descriptorConfiguration, configurationDefinitions, accumulator);
-        return ImmutableList.copyOf(accumulator);
+        return accumulator.build();
     }
 
-    private static void populateHierarchy(Configuration metadata, ImmutableMap<String, Configuration> configurationDefinitions, Set<String> accumulator) {
+    private static void populateHierarchy(Configuration metadata, ImmutableMap<String, Configuration> configurationDefinitions, ImmutableSet.Builder<String> accumulator) {
         accumulator.add(metadata.getName());
         for (String parentName : metadata.getExtendsFrom()) {
             Configuration parent = configurationDefinitions.get(parentName);

@@ -44,7 +44,7 @@ enum TestPrecondition implements org.gradle.internal.Factory<Boolean> {
         !FILE_PERMISSIONS.fulfilled
     }),
     SET_ENV_VARIABLE({
-        !UNKNOWN_OS.fulfilled && JavaVersion.current() < JavaVersion.VERSION_1_9
+        !UNKNOWN_OS.fulfilled
     }),
     WORKING_DIR({
         !UNKNOWN_OS.fulfilled && JavaVersion.current() < JavaVersion.VERSION_11
@@ -108,6 +108,9 @@ enum TestPrecondition implements org.gradle.internal.Factory<Boolean> {
     }),
     JDK9_OR_EARLIER({
         JavaVersion.current() <= JavaVersion.VERSION_1_9
+    }),
+    JDK10_OR_EARLIER({
+        JavaVersion.current() <= JavaVersion.VERSION_1_10
     }),
     JDK7_POSIX({
         NOT_WINDOWS.fulfilled

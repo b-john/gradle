@@ -14,25 +14,18 @@
  * limitations under the License.
  */
 
-import org.gradle.api.internal.artifacts.BaseRepositoryFactory.PLUGIN_PORTAL_DEFAULT_URL
 import org.gradle.plugins.ide.idea.model.IdeaModel
 
 import org.gradle.kotlin.dsl.plugins.dsl.KotlinDslPlugin
-import org.gradle.kotlin.dsl.plugins.dsl.ProgressiveModeState
 
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 import java.io.File
 import java.util.Properties
 
-
-buildscript {
-    project.apply(from = "$rootDir/../gradle/shared-with-buildSrc/mirrors.gradle.kts")
-}
-
 plugins {
     `kotlin-dsl`
-    id("org.gradle.kotlin.ktlint-convention") version "0.1.10" apply false
+    id("org.gradle.kotlin.ktlint-convention") version "0.1.15" apply false
 }
 
 subprojects {
@@ -49,6 +42,11 @@ subprojects {
         applyKotlinProjectConventions()
     }
 
+    configure<JavaPluginExtension> {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    
     apply(plugin = "idea")
     apply(plugin = "eclipse")
 
@@ -62,31 +60,54 @@ subprojects {
 
     afterEvaluate {
         if (tasks.withType<ValidateTaskProperties>().isEmpty()) {
-            val validateTaskProperties = tasks.register("validateTaskProperties", ValidateTaskProperties::class.java) {
-                outputFile.set(project.the<ReportingExtension>().baseDirectory.file("task-properties/report.txt"))
+            val validateTaskProperties by tasks.registering(ValidateTaskProperties::class) {
+                outputFile.set(project.reporting.baseDirectory.file("task-properties/report.txt"))
 
-                val mainSourceSet = project.java.sourceSets[SourceSet.MAIN_SOURCE_SET_NAME]
-                classes = mainSourceSet.output.classesDirs
-                classpath = mainSourceSet.compileClasspath
+                val mainSourceSet = project.sourceSets.main.get()
+                classes.setFrom(mainSourceSet.output.classesDirs)
+                classpath.setFrom(mainSourceSet.compileClasspath)
                 dependsOn(mainSourceSet.output)
             }
-            tasks.named("check").configure { dependsOn(validateTaskProperties) }
+            tasks.check { dependsOn(validateTaskProperties) }
         }
     }
+
+    tasks.withType<ValidateTaskProperties> {
+        failOnWarning = true
+        enableStricterValidation = true
+    }
 }
-var pluginPortalUrl = (project.rootProject.extensions.extraProperties.get("repositoryMirrors") as Map<String, String>).get("gradleplugins")
 
 allprojects {
     repositories {
-        maven(url = "https://repo.gradle.org/gradle/libs-releases")
-        maven(url = "https://repo.gradle.org/gradle/libs-snapshots")
-        maven(url = pluginPortalUrl ?: PLUGIN_PORTAL_DEFAULT_URL)
+        gradlePluginPortal()
+        maven {
+            name = "Gradle libs"
+            url = uri("https://repo.gradle.org/gradle/libs")
+        }
+        maven {
+            name = "Gradle snapshot libs"
+            url = uri("https://repo.gradle.org/gradle/libs-snapshots")
+        }
+        maven {
+            name = "kotlin-eap"
+            url = uri("https://dl.bintray.com/kotlin/kotlin-eap")
+        }
     }
 }
 
 dependencies {
     subprojects.forEach {
-        "runtime"(project(it.path))
+        runtime(project(it.path))
+    }
+}
+
+// Set gradlebuild.skipBuildSrcChecks Gradle property to "true" to disable all buildSrc verification tasks
+if (findProperty("gradlebuild.skipBuildSrcChecks") == "true") {
+    allprojects {
+        tasks.matching { it.group == LifecycleBasePlugin.VERIFICATION_GROUP }.configureEach {
+            enabled = false
+        }
     }
 }
 
@@ -131,7 +152,7 @@ fun readProperties(propertiesFile: File) = Properties().apply {
     }
 }
 
-val checkSameDaemonArgs = tasks.register("checkSameDaemonArgs") {
+val checkSameDaemonArgs by tasks.registering {
     doLast {
         val buildSrcProperties = readProperties(File(project.rootDir, "gradle.properties"))
         val rootProperties = readProperties(File(project.rootDir, "../gradle.properties"))
@@ -144,19 +165,18 @@ val checkSameDaemonArgs = tasks.register("checkSameDaemonArgs") {
     }
 }
 
-tasks.named("build").configure { dependsOn(checkSameDaemonArgs) }
+tasks.build { dependsOn(checkSameDaemonArgs) }
 
 fun Project.applyGroovyProjectConventions() {
     apply(plugin = "groovy")
 
     dependencies {
         compile(localGroovy())
-        testCompile("org.spockframework:spock-core:1.0-groovy-2.4")
-        testCompile("cglib:cglib:3.2.6")
-        testCompile("org.objenesis:objenesis:2.4")
-        constraints {
-            compile("org.codehaus.groovy:groovy-all:${groovy.lang.GroovySystem.getVersion()}")
+        testCompile("org.spockframework:spock-core:1.2-groovy-2.5") {
+            exclude(group = "org.codehaus.groovy")
         }
+        testCompile("net.bytebuddy:byte-buddy:1.8.21")
+        testCompile("org.objenesis:objenesis:2.6")
     }
 
     tasks.withType<GroovyCompile>().configureEach {
@@ -172,10 +192,19 @@ fun Project.applyGroovyProjectConventions() {
         inputs.property("javaInstallation", "$vendor ${JavaVersion.current()}")
     }
 
-    val compileGroovy: TaskProvider<GroovyCompile> = tasks.withType(GroovyCompile::class.java).named("compileGroovy")
+    tasks.withType<Test>().configureEach {
+        if (JavaVersion.current().isJava9Compatible()) {
+            //allow ProjectBuilder to inject legacy types into the system classloader
+            jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
+            jvmArgs("--illegal-access=deny")
+        }
+        
+    }
+
+    val compileGroovy by tasks.existing(GroovyCompile::class)
 
     configurations {
-        "apiElements" {
+        apiElements {
             outgoing.variants["classes"].artifact(
                 mapOf(
                     "file" to compileGroovy.get().destinationDir,
@@ -187,19 +216,12 @@ fun Project.applyGroovyProjectConventions() {
 }
 
 fun Project.applyKotlinProjectConventions() {
-    apply(plugin = "kotlin")
-
+    apply(plugin = "org.gradle.kotlin.kotlin-dsl")
     apply(plugin = "org.gradle.kotlin.ktlint-convention")
-
-    tasks.withType<KotlinCompile>().configureEach {
-        kotlinOptions {
-            freeCompilerArgs += listOf("-Xjsr305=strict")
-        }
-    }
 
     plugins.withType<KotlinDslPlugin> {
         kotlinDslPluginOptions {
-            progressive.set(ProgressiveModeState.ENABLED)
+            experimentalWarning.set(false)
         }
     }
 }

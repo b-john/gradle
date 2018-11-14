@@ -15,6 +15,7 @@
  */
 package org.gradle.cache.internal;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import net.jcip.annotations.ThreadSafe;
 import org.gradle.api.Action;
@@ -165,6 +166,10 @@ public class DefaultCacheAccess implements CacheCoordinator {
         try {
             // Take ownership
             takeOwnershipNow();
+            if (fileLockHeldByOwner != null) {
+                fileLockHeldByOwner.run();
+            }
+            crossProcessCacheAccess.close();
             if (cleanupAction != null) {
                 try {
                     if (cleanupAction.requiresCleanup()) {
@@ -174,10 +179,6 @@ public class DefaultCacheAccess implements CacheCoordinator {
                     LOG.debug("Cache {} could not run cleanup action {}", cacheDisplayName, cleanupAction);
                 }
             }
-            if (fileLockHeldByOwner != null) {
-                fileLockHeldByOwner.run();
-            }
-            crossProcessCacheAccess.close();
             if (cacheClosedCount != 1) {
                 LOG.debug("Cache {} was closed {} times.", cacheDisplayName, cacheClosedCount);
             }
@@ -488,7 +489,8 @@ public class DefaultCacheAccess implements CacheCoordinator {
         }
     }
 
-    private static class InvalidCacheReuseException extends GradleException {
+    @VisibleForTesting
+    static class InvalidCacheReuseException extends GradleException {
         InvalidCacheReuseException(String message) {
             super(message);
         }

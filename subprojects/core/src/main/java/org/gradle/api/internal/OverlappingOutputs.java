@@ -16,10 +16,11 @@
 
 package org.gradle.api.internal;
 
+import com.google.common.collect.ImmutableSortedMap;
 import org.gradle.internal.file.FileType;
+import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
 import org.gradle.internal.fingerprint.FileCollectionFingerprint;
-import org.gradle.internal.fingerprint.HistoricalFileCollectionFingerprint;
-import org.gradle.internal.fingerprint.NormalizedFileSnapshot;
+import org.gradle.internal.fingerprint.FileSystemLocationFingerprint;
 import org.gradle.internal.hash.HashCode;
 
 import javax.annotation.Nullable;
@@ -35,18 +36,43 @@ public class OverlappingOutputs {
     }
 
     @Nullable
-    public static OverlappingOutputs detect(String propertyName, HistoricalFileCollectionFingerprint previousExecution, FileCollectionFingerprint beforeExecution) {
-        Map<String, NormalizedFileSnapshot> previousSnapshots = previousExecution.getSnapshots();
-        Map<String, NormalizedFileSnapshot> beforeSnapshots = beforeExecution.getSnapshots();
+    public static OverlappingOutputs detect(@Nullable ImmutableSortedMap<String, FileCollectionFingerprint> previous, ImmutableSortedMap<String, CurrentFileCollectionFingerprint> current) {
+        for (Map.Entry<String, CurrentFileCollectionFingerprint> entry : current.entrySet()) {
+            String propertyName = entry.getKey();
+            CurrentFileCollectionFingerprint beforeExecution = entry.getValue();
+            FileCollectionFingerprint afterPreviousExecution = getFingerprintAfterPreviousExecution(previous, propertyName);
+            OverlappingOutputs overlappingOutputs = OverlappingOutputs.detect(propertyName, afterPreviousExecution, beforeExecution);
+            if (overlappingOutputs != null) {
+                return overlappingOutputs;
+            }
+        }
+        return null;
+    }
 
-        for (Map.Entry<String, NormalizedFileSnapshot> beforeEntry : beforeSnapshots.entrySet()) {
+    private static FileCollectionFingerprint getFingerprintAfterPreviousExecution(@Nullable ImmutableSortedMap<String, FileCollectionFingerprint> previous, String propertyName) {
+        if (previous != null) {
+            FileCollectionFingerprint afterPreviousExecution = previous.get(propertyName);
+            if (afterPreviousExecution != null) {
+                return afterPreviousExecution;
+            }
+        }
+        return FileCollectionFingerprint.EMPTY;
+    }
+
+
+    @Nullable
+    private static OverlappingOutputs detect(String propertyName, FileCollectionFingerprint previous, CurrentFileCollectionFingerprint before) {
+        Map<String, FileSystemLocationFingerprint> previousFingerprints = previous.getFingerprints();
+        Map<String, FileSystemLocationFingerprint> beforeFingerprints = before.getFingerprints();
+
+        for (Map.Entry<String, FileSystemLocationFingerprint> beforeEntry : beforeFingerprints.entrySet()) {
             String path = beforeEntry.getKey();
-            NormalizedFileSnapshot beforeSnapshot = beforeEntry.getValue();
-            HashCode contentHash = beforeSnapshot.getNormalizedContentHash();
-            NormalizedFileSnapshot previousSnapshot = previousSnapshots.get(path);
-            HashCode previousContentHash = previousSnapshot == null ? null : previousSnapshot.getNormalizedContentHash();
+            FileSystemLocationFingerprint beforeFingerprint = beforeEntry.getValue();
+            HashCode contentHash = beforeFingerprint.getNormalizedContentHash();
+            FileSystemLocationFingerprint previousFingerprint = previousFingerprints.get(path);
+            HashCode previousContentHash = previousFingerprint == null ? null : previousFingerprint.getNormalizedContentHash();
             // Missing files can be ignored
-            if (beforeSnapshot.getType() != FileType.Missing) {
+            if (beforeFingerprint.getType() != FileType.Missing) {
                 if (createdSincePreviousExecution(previousContentHash) || changedSincePreviousExecution(contentHash, previousContentHash)) {
                     return new OverlappingOutputs(propertyName, path);
                 }

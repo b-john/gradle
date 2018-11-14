@@ -27,6 +27,8 @@ dependencies {
 
     implementation(project(":resources"))
     implementation(project(":resourcesHttp"))
+    implementation(project(":snapshots"))
+    implementation(project(":execution"))
 
     implementation(library("asm"))
     implementation(library("asm_commons"))
@@ -51,8 +53,9 @@ dependencies {
     integTestRuntimeOnly(project(":resourcesS3"))
     integTestRuntimeOnly(project(":resourcesSftp"))
     integTestRuntimeOnly(project(":testKit"))
+    integTestRuntimeOnly(project(":platformNative"))
 
-    testFixturesCompile(project(":resourcesHttp", "testFixturesUsageCompile"))
+    testFixturesApi(project(":resourcesHttp", "testFixturesApiElements"))
     testFixturesImplementation(project(":internalIntegTesting"))
 }
 
@@ -63,15 +66,16 @@ gradlebuildJava {
 testFixtures {
     from(":core")
     from(":messaging")
-    from(":modelCore")
+    from(":coreApi")
     from(":versionControl")
     from(":resourcesHttp")
+    from(":baseServices")
 }
 
 testFilesCleanup {
     policy.set(WhenNotEmpty.REPORT)
 }
 
-tasks.named("classpathManifest").configureAs<ClasspathManifest> {
+tasks.classpathManifest {
     additionalProjects = listOf(project(":runtimeApiInfo"))
 }

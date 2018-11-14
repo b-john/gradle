@@ -21,22 +21,22 @@ import org.gradle.api.artifacts.ComponentMetadataContext;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.ResolvedModuleVersion;
 import org.gradle.api.internal.artifacts.configurations.dynamicversion.CachePolicy;
-import org.gradle.api.internal.changedetection.state.InMemoryCacheDecoratorFactory;
-import org.gradle.api.internal.changedetection.state.ValueSnapshotter;
 import org.gradle.cache.CacheRepository;
+import org.gradle.cache.internal.InMemoryCacheDecoratorFactory;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
 import org.gradle.internal.serialize.Serializer;
+import org.gradle.internal.snapshot.ValueSnapshotter;
 import org.gradle.util.BuildCommencedTimeProvider;
 
 import java.io.Serializable;
 
 public class ComponentMetadataRuleExecutor extends CrossBuildCachingRuleExecutor<ModuleComponentResolveMetadata, ComponentMetadataContext, ModuleComponentResolveMetadata> {
 
-    private static Transformer<Serializable, ModuleComponentResolveMetadata> getKeyToSnapshotableTransformer(final boolean improvedPomSupport) {
+    private static Transformer<Serializable, ModuleComponentResolveMetadata> getKeyToSnapshotableTransformer() {
         return new Transformer<Serializable, ModuleComponentResolveMetadata>() {
             @Override
             public Serializable transform(ModuleComponentResolveMetadata moduleMetadata) {
-                return moduleMetadata.getOriginalContentHash().asHexString() + improvedPomSupport;
+                return moduleMetadata.getOriginalContentHash().asHexString();
             }
         };
     }
@@ -47,8 +47,8 @@ public class ComponentMetadataRuleExecutor extends CrossBuildCachingRuleExecutor
                                          InMemoryCacheDecoratorFactory cacheDecoratorFactory,
                                          ValueSnapshotter snapshotter,
                                          BuildCommencedTimeProvider timeProvider,
-                                         Serializer<ModuleComponentResolveMetadata> componentMetadataContextSerializer, boolean improvedPomSupport) {
-        super("md-rule", cacheRepository, cacheDecoratorFactory, snapshotter, timeProvider, createValidator(timeProvider), getKeyToSnapshotableTransformer(improvedPomSupport), componentMetadataContextSerializer);
+                                         Serializer<ModuleComponentResolveMetadata> componentMetadataContextSerializer) {
+        super("md-rule", cacheRepository, cacheDecoratorFactory, snapshotter, timeProvider, createValidator(timeProvider), getKeyToSnapshotableTransformer(), componentMetadataContextSerializer);
         this.componentMetadataContextSerializer = componentMetadataContextSerializer;
     }
 

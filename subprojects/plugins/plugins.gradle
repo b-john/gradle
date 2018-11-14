@@ -1,3 +1,4 @@
+import org.gradle.gradlebuild.testing.integrationtests.cleanup.WhenNotEmpty
 import org.gradle.gradlebuild.unittestandcompile.ModuleType
 
 /*
@@ -29,6 +30,7 @@ dependencies {
     compile project(':languageGroovy')
     compile project(':diagnostics')
     compile project(':testingJvm')
+    compile project(':snapshots')
 
     compile libraries.ant.coordinates
     compile libraries.asm.coordinates
@@ -42,7 +44,7 @@ dependencies {
     // Making this better would likely involve a separate `:gradleRuntime` module that brings in `:core`, `:dependencyManagement` and other key subprojects
     runtime project(":compositeBuilds")
 
-    testFixturesCompile project(":internalIntegTesting")
+    testFixturesApi project(":internalIntegTesting")
 
     testCompile testLibraries.jsoup
 
@@ -71,7 +73,6 @@ def wrapperJar = tasks.register("wrapperJar", Copy) {
 }
 sourceSets.main.output.dir wrapperJarDir, builtBy: wrapperJar
 
-import org.gradle.gradlebuild.testing.integrationtests.cleanup.WhenNotEmpty
 testFilesCleanup {
     policy = WhenNotEmpty.REPORT
 }

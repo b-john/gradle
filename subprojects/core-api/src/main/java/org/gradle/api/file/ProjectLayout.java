@@ -20,6 +20,7 @@ import groovy.lang.Closure;
 import org.gradle.api.Incubating;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Provider;
 
 import java.io.File;
@@ -44,49 +45,41 @@ public interface ProjectLayout {
     DirectoryProperty getBuildDirectory();
 
     /**
-     * Creates a new {@link DirectoryVar} that uses the project directory to resolve paths, if required. The var has no initial value.
-     *
-     * @deprecated Use {@link #directoryProperty()} instead.
-     */
-    @Deprecated
-    DirectoryVar newDirectoryVar();
-
-    /**
-     * Creates a new {@link DirectoryProperty} that uses the project directory to resolve paths, if required. The property has no initial value.
+     * Creates a new {@link DirectoryProperty} that uses the project directory to resolve relative paths, if required. The property has no initial value.
      *
      * @since 4.3
+     * @deprecated Replaced by {@link ObjectFactory#directoryProperty()}
      */
+    @Deprecated
     DirectoryProperty directoryProperty();
 
     /**
-     * Creates a new {@link DirectoryProperty} that uses the project directory to resolve paths, if required. The property has the initial provider specified.
+     * Creates a new {@link DirectoryProperty} that uses the project directory to resolve relative paths, if required. The property has the initial provider specified.
      *
      * @param initialProvider initial provider for the property
      * @since 4.4
+     * @deprecated Replaced by {@link ObjectFactory#directoryProperty()}
      */
+    @Deprecated
     DirectoryProperty directoryProperty(Provider<? extends Directory> initialProvider);
 
     /**
-     * Creates a new {@link RegularFileVar} that uses the project directory to resolve paths, if required. The var has no initial value.
-     *
-     * @deprecated Use {@link #fileProperty()} instead.
-     */
-    @Deprecated
-    RegularFileVar newFileVar();
-
-    /**
-     * Creates a new {@link RegularFileProperty} that uses the project directory to resolve paths, if required. The property has no initial value.
+     * Creates a new {@link RegularFileProperty} that uses the project directory to resolve relative paths, if required. The property has no initial value.
      *
      * @since 4.3
+     * @deprecated Replaced by {@link ObjectFactory#fileProperty()}
      */
+    @Deprecated
     RegularFileProperty fileProperty();
 
     /**
-     * Creates a new {@link RegularFileProperty} that uses the project directory to resolve paths, if required. The property has the initial provider specified.
+     * Creates a new {@link RegularFileProperty} that uses the project directory to resolve relative paths, if required. The property has the initial provider specified.
      *
      * @param initialProvider initial provider for the property
      * @since 4.4
+     * @deprecated Replaced by {@link ObjectFactory#fileProperty()}
      */
+    @Deprecated
     RegularFileProperty fileProperty(Provider<? extends RegularFile> initialProvider);
 
     /**

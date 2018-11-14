@@ -22,9 +22,11 @@ import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ComponentSelector;
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.Version;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionParser;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.CandidateModule;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.selectors.SelectorStateResolver;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
 import org.gradle.api.internal.attributes.AttributeMergingException;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
@@ -56,10 +58,13 @@ class ModuleResolveState implements CandidateModule {
     private final ImmutableAttributesFactory attributesFactory;
     private final Comparator<Version> versionComparator;
     private final VersionParser versionParser;
+    private SelectorStateResolver<ComponentState> selectorStateResolver;
+    private final PendingDependencies pendingDependencies;
     private ComponentState selected;
     private ImmutableAttributes mergedAttributes = ImmutableAttributes.EMPTY;
     private AttributeMergingException attributeMergingError;
     private VirtualPlatformState platformState;
+    private boolean overriddenSelection;
 
     ModuleResolveState(IdGenerator<Long> idGenerator,
                        ModuleIdentifier id,
@@ -67,7 +72,8 @@ class ModuleResolveState implements CandidateModule {
                        VariantNameBuilder variantNameBuilder,
                        ImmutableAttributesFactory attributesFactory,
                        Comparator<Version> versionComparator,
-                       VersionParser versionParser) {
+                       VersionParser versionParser,
+                       SelectorStateResolver<ComponentState> selectorStateResolver) {
         this.idGenerator = idGenerator;
         this.id = id;
         this.metaDataResolver = metaDataResolver;
@@ -75,6 +81,12 @@ class ModuleResolveState implements CandidateModule {
         this.attributesFactory = attributesFactory;
         this.versionComparator = versionComparator;
         this.versionParser = versionParser;
+        this.pendingDependencies = new PendingDependencies();
+        this.selectorStateResolver = selectorStateResolver;
+    }
+
+    void setSelectorStateResolver(SelectorStateResolver<ComponentState> selectorStateResolver) {
+        this.selectorStateResolver = selectorStateResolver;
     }
 
     @Override
@@ -188,6 +200,9 @@ class ModuleResolveState implements CandidateModule {
         assert this.selected == null;
         assert selected != null;
 
+        if (!selected.getId().getModule().equals(getId())) {
+            this.overriddenSelection = true;
+        }
         this.selected = selected;
 
         doRestart(selected);
@@ -239,6 +254,10 @@ class ModuleResolveState implements CandidateModule {
         assert !selectors.contains(selector) : "Inconsistent call to addSelector: should only be done if the selector isn't in use";
         selectors.add(selector);
         mergedAttributes = appendAttributes(mergedAttributes, selector);
+        if (overriddenSelection) {
+            assert selected != null : "An overridden module cannot have selected == null";
+            selector.overrideSelection(selected);
+        }
     }
 
     void removeSelector(SelectorState selector) {
@@ -290,5 +309,67 @@ class ModuleResolveState implements CandidateModule {
             platformState = new VirtualPlatformState(versionComparator, versionParser, this);
         }
         return platformState;
+    }
+
+    boolean isVirtualPlatform() {
+        return platformState != null && !platformState.getParticipatingModules().isEmpty();
+    }
+
+    void decreaseHardEdgeCount() {
+        pendingDependencies.decreaseHardEdgeCount();
+        if (pendingDependencies.isPending()) {
+            // Back to being a pending dependency
+            // Clear remaining incoming edges, as they must be all from constraints
+            if (selected != null) {
+                for (NodeState node : selected.getNodes()) {
+                    node.clearConstraintEdges(pendingDependencies);
+                }
+            }
+        }
+    }
+
+    boolean isPending() {
+        return pendingDependencies.isPending();
+    }
+
+    PendingDependencies getPendingDependencies() {
+        return pendingDependencies;
+    }
+
+    void addPendingNode(NodeState node) {
+        pendingDependencies.addNode(node);
+    }
+
+
+    public boolean maybeUpdateSelection() {
+        ComponentState newSelected = selectorStateResolver.selectBest(getId(), getSelectors());
+        if (selected == null) {
+            select(newSelected);
+            return true;
+        } else if (newSelected != selected) {
+            changeSelection(newSelected);
+            return true;
+        }
+        return false;
+    }
+
+    boolean hasCompetingForceSelectors() {
+        if (selectors.size() > 1) {
+            for (SelectorState selector : selectors) {
+                if (selector.isForce() && !selector.getRequested().matchesStrictly(selected.getComponentId())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    void maybeCreateVirtualMetadata(ResolveState resolveState) {
+        for (ComponentState componentState : versions.values()) {
+            if (componentState.getMetadata() == null) {
+                // TODO LJA Using the root as the NodeState here is a bit of a cheat, investigate if we can track the proper NodeState
+                componentState.setMetadata(new LenientPlatformResolveMetadata((ModuleComponentIdentifier) componentState.getComponentId(), componentState.getId(), platformState, resolveState.getRoot(), resolveState));
+            }
+        }
     }
 }

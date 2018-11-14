@@ -15,7 +15,6 @@
  */
 package org.gradle.internal.buildevents;
 
-import org.gradle.BuildAdapter;
 import org.gradle.BuildResult;
 import org.gradle.api.Action;
 import org.gradle.api.logging.LogLevel;
@@ -42,9 +41,9 @@ import static org.gradle.internal.logging.text.StyledTextOutput.Style.Normal;
 import static org.gradle.internal.logging.text.StyledTextOutput.Style.UserInput;
 
 /**
- * A {@link org.gradle.BuildListener} which reports the build exception, if any.
+ * Reports the build exception, if any.
  */
-public class BuildExceptionReporter extends BuildAdapter implements Action<Throwable> {
+public class BuildExceptionReporter implements Action<Throwable> {
     private enum ExceptionStyle {
         NONE, FULL
     }

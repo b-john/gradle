@@ -77,6 +77,10 @@ public class DefaultGradleDistribution implements GradleDistribution {
         if (isVersion("0.9-rc-1") && javaVersion == JavaVersion.VERSION_1_5) {
             return false;
         }
+        
+        if (isSameOrOlder("1.0")) {
+            return javaVersion.compareTo(JavaVersion.VERSION_1_5) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_7) <= 0;
+        }
 
         // 1.x works on Java 5 - 8
         if (isSameOrOlder("1.12")) {
@@ -93,7 +97,11 @@ public class DefaultGradleDistribution implements GradleDistribution {
             return javaVersion.compareTo(JavaVersion.VERSION_1_7) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_8) <= 0;
         }
 
-        return javaVersion.compareTo(JavaVersion.VERSION_1_7) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_10) <= 0;
+        if (isSameOrOlder("4.10")) {
+            return javaVersion.compareTo(JavaVersion.VERSION_1_7) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_10) <= 0;
+        }
+
+        return javaVersion.compareTo(JavaVersion.VERSION_1_8) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_10) <= 0;
     }
 
     public boolean worksWith(OperatingSystem os) {
@@ -110,10 +118,6 @@ public class DefaultGradleDistribution implements GradleDistribution {
         return isSameOrNewer("1.0-milestone-7");
     }
 
-    public boolean isOpenApiSupported() {
-        return isSameOrNewer("0.9-rc-1") && !isSameOrNewer("2.0-rc-1");
-    }
-
     public boolean isToolingApiSupported() {
         return isSameOrNewer("1.0-milestone-3");
     }
@@ -121,22 +125,6 @@ public class DefaultGradleDistribution implements GradleDistribution {
     @Override
     public boolean isToolingApiTargetJvmSupported(JavaVersion javaVersion) {
         return worksWith(javaVersion);
-    }
-
-    public boolean isToolingApiNonAsciiOutputSupported() {
-        if (OperatingSystem.current().isWindows()) {
-            return !isVersion("1.0-milestone-7") && !isVersion("1.0-milestone-8") && !isVersion("1.0-milestone-8a");
-        }
-        return true;
-    }
-
-    public boolean isToolingApiDaemonBaseDirSupported() {
-        return isSameOrNewer("2.2-rc-1");
-    }
-
-    @Override
-    public boolean isToolingApiEventsInEmbeddedModeSupported() {
-        return isSameOrNewer("2.6-rc-1");
     }
 
     @Override
@@ -195,6 +183,58 @@ public class DefaultGradleDistribution implements GradleDistribution {
 
     public boolean isFullySupportsIvyRepository() {
         return isSameOrNewer("1.0-milestone-7");
+    }
+
+    @Override
+    public boolean isAddsTaskExecutionExceptionAroundAllTaskFailures() {
+        return isSameOrNewer("5.0");
+    }
+
+    @Override
+    public boolean isToolingApiRetainsOriginalFailureOnCancel() {
+        // Versions before 5.1 would unpack the exception and throw part of it, losing some context
+        return isSameOrNewer("5.1");
+    }
+
+    @Override
+    public boolean isToolingApiHasCauseOnCancel() {
+        // Versions before 3.2 would throw away the cause. There was also a regression in 4.0.x
+        return isSameOrNewer("3.2") && !(isSameOrNewer("4.0") && isSameOrOlder("4.0.2"));
+    }
+
+    @Override
+    public boolean isToolingApiHasCauseOnForcedCancel() {
+        // Versions before 5.1 would discard context on forced cancel
+        return isSameOrNewer("5.1");
+    }
+
+    @Override
+    public boolean isToolingApiLogsFailureOnCancel() {
+        // Versions before 4.1 would log "CONFIGURE SUCCESSFUL" for model/action execution (but "BUILD FAILED" for task/test execution)
+        return isSameOrNewer("4.1");
+    }
+
+    @Override
+    public boolean isToolingApiHasCauseOnPhasedActionFail() {
+        return isSameOrNewer("5.1");
+    }
+
+    @Override
+    public boolean isToolingApiMergesStderrIntoStdout() {
+        return isSameOrNewer("4.7") && isSameOrOlder("5.0");
+    }
+
+    @Override
+    public boolean isToolingApiLogsConfigureSummary() {
+        return isSameOrNewer("2.14");
+    }
+
+    @Override
+    public <T> T selectOutputWithFailureLogging(T stdout, T stderr) {
+        if (isSameOrNewer("4.0") && isSameOrOlder("4.6") || isSameOrNewer("5.1")) {
+            return stderr;
+        }
+        return stdout;
     }
 
     protected boolean isSameOrNewer(String otherVersion) {

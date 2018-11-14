@@ -20,32 +20,20 @@ import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import spock.lang.Unroll
 
+import static org.gradle.internal.scan.config.BuildScanPluginCompatibility.MIN_SUPPORTED_VERSION
+
 class BuildScanPluginSmokeTest extends AbstractSmokeTest {
 
-    private static final List<String> GRACEFULLY_UNSUPPORTED = [
-        "1.6",
-        "1.7",
-        "1.7.4",
+    private static final List<String> GRACEFULLY_UNSUPPORTED_WITHOUT_FAILURE = [
+            "2.0.1",
+            "2.0",
+            "1.16",
+            "1.15",
+            "1.14"
     ]
 
     private static final List<String> SUPPORTED = [
-        "1.8",
-        "1.9",
-        // "1.9.1", // https://github.com/gradle/dotcom/issues/1213
-        "1.10",
-        "1.10.1",
-        "1.10.2",
-        "1.10.3",
-        "1.11",
-        "1.12",
-        "1.12.1",
-        "1.13",
-        "1.13.1",
-        "1.13.2",
-        "1.13.3",
-        "1.13.4",
-        "1.14",
-        "1.15.1"
+            "2.0.2"
     ]
 
     @Unroll
@@ -61,19 +49,21 @@ class BuildScanPluginSmokeTest extends AbstractSmokeTest {
     }
 
     @Unroll
-    "gracefully fails with unsupported version #version"() {
+    "gracefully succeeds without capturing scan with unsupported version #version"() {
         when:
         usePluginVersion version
 
+        and:
+        def output = build("--scan").output
+
         then:
-        buildAndFail("--scan").output.contains("""
-> Failed to apply plugin [id 'com.gradle.build-scan']
-   > This version of Gradle requires version 1.8.0 of the build scan plugin or later.
-     Please see https://gradle.com/scans/help/gradle-incompatible-plugin-version for more information.
-""")
+        output.contains("This version of Gradle requires version $MIN_SUPPORTED_VERSION of the build scan plugin or later.")
+
+        and:
+        output.contains("Please see https://gradle.com/scans/help/gradle-incompatible-plugin-version for more information.")
 
         where:
-        version << GRACEFULLY_UNSUPPORTED
+        version << GRACEFULLY_UNSUPPORTED_WITHOUT_FAILURE
     }
 
     BuildResult build(String... args) {
@@ -101,8 +91,8 @@ class BuildScanPluginSmokeTest extends AbstractSmokeTest {
 
             apply plugin: "com.gradle.build-scan"
             buildScan {
-                licenseAgreementUrl = 'https://gradle.com/terms-of-service'
-                licenseAgree = 'yes'
+                termsOfServiceUrl = 'https://gradle.com/terms-of-service'
+                termsOfServiceAgree = 'yes'
             }
 
             apply plugin: 'java'

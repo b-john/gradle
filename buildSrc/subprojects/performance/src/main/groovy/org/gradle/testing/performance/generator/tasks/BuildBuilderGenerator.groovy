@@ -24,6 +24,8 @@ import org.gradle.api.provider.ProviderFactory
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecSpec
 
@@ -38,14 +40,15 @@ class BuildBuilderGenerator extends ProjectGeneratorTask {
     /**
      * Installation directory of the build-builder tool.
      */
+    @PathSensitive(PathSensitivity.RELATIVE)
     @InputDirectory
-    final DirectoryProperty buildBuilderInstall = newInputDirectory()
+    final DirectoryProperty buildBuilderInstall
 
     /**
      * Output directory for the generated project
      */
     @OutputDirectory
-    final DirectoryProperty generatedDir = newOutputDirectory()
+    final DirectoryProperty generatedDir
 
     /**
      * Additional arguments to provide to the build-builder.
@@ -75,16 +78,18 @@ class BuildBuilderGenerator extends ProjectGeneratorTask {
 
     @Inject
     BuildBuilderGenerator(ObjectFactory objectFactory, ProviderFactory providerFactory) {
+        buildBuilderInstall = objectFactory.directoryProperty()
+        generatedDir = objectFactory.directoryProperty()
         generatedDir.set(project.layout.buildDirectory.dir(getName()))
         args = objectFactory.listProperty(String)
-        args.addAll(providerFactory.provider(new Callable<Iterable<String>>() {
+        args.set(providerFactory.provider(new Callable<Iterable<String>>() {
             @Override
             Iterable<String> call() throws Exception {
                 // TODO: Model the other build builder options
                 return [
                     projectType,
-                    "--projects", projects,
-                    "--source-files", sourceFiles,
+                    "--projects", Integer.toString(projects),
+                    "--source-files", Integer.toString(sourceFiles),
                     "--dir", generatedDir.get().asFile.absolutePath
                 ]
             }

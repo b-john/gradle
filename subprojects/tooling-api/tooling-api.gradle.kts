@@ -22,16 +22,17 @@ import org.gradle.gradlebuild.packaging.ShadedJarExtension
 import org.gradle.gradlebuild.test.integrationtests.IntegrationTest
 import org.gradle.gradlebuild.unittestandcompile.ModuleType
 import org.gradle.plugins.ide.eclipse.model.Classpath
+import org.gradle.plugins.ide.eclipse.model.SourceFolder
 
 plugins {
-    id("gradlebuild.shaded-jar")
+    gradlebuild.`shaded-jar`
 }
 
 val testPublishRuntime by configurations.creating
 
 val buildReceipt: Provider<RegularFile> = rootProject.tasks.withType<BuildReceipt>().named("createBuildReceipt").map { layout.file(provider { it.receiptFile }).get() }
 
-the<ShadedJarExtension>().apply {
+shadedJar {
     shadedConfiguration.exclude(mapOf("group" to "org.slf4j", "module" to "slf4j-api"))
     keepPackages.set(listOf("org.gradle.tooling"))
     unshadedPackages.set(listOf("org.gradle", "org.slf4j", "sun.misc"))
@@ -47,8 +48,8 @@ dependencies {
     publishCompile(library("slf4j_api")) { version { prefer(libraryVersion("slf4j_api")) } }
     compile(library("jcip"))
 
-    testFixturesCompile(project(":baseServicesGroovy"))
-    testFixturesCompile(project(":internalIntegTesting"))
+    testFixturesApi(project(":baseServicesGroovy"))
+    testFixturesApi(project(":internalIntegTesting"))
 
     integTestRuntime(project(":toolingApiBuilders"))
     integTestRuntime(project(":ivy"))
@@ -57,6 +58,7 @@ dependencies {
     crossVersionTestRuntime(project(":buildComparison"))
     crossVersionTestRuntime(project(":ivy"))
     crossVersionTestRuntime(project(":maven"))
+    crossVersionTestRuntimeOnly(project(":apiMetadata"))
 }
 
 gradlebuildJava {
@@ -72,10 +74,11 @@ testFixtures {
 
 apply(from = "buildship.gradle")
 
-tasks.named("sourceJar").configureAs<Jar> {
+tasks.sourceJar {
     configurations.compile.allDependencies.withType<ProjectDependency>().forEach {
-        from(it.dependencyProject.java.sourceSets[SourceSet.MAIN_SOURCE_SET_NAME].groovy.srcDirs)
-        from(it.dependencyProject.java.sourceSets[SourceSet.MAIN_SOURCE_SET_NAME].java.srcDirs)
+        val sourceSet = it.dependencyProject.java.sourceSets[SourceSet.MAIN_SOURCE_SET_NAME]
+        from(sourceSet.groovy.srcDirs)
+        from(sourceSet.java.srcDirs)
     }
 }
 
@@ -83,15 +86,15 @@ eclipse {
     classpath {
         file.whenMerged(Action<Classpath> {
             //**TODO
-            entries.removeAll { path.contains("src/test/groovy") }
-            entries.removeAll { path.contains("src/integTest/groovy") }
+            entries.removeAll { it is SourceFolder && it.path.contains("src/test/groovy") }
+            entries.removeAll { it is SourceFolder && it.path.contains("src/integTest/groovy") }
         })
     }
 }
 
 tasks.register<Upload>("publishLocalArchives") {
     val repoBaseDir = rootProject.file("build/repo")
-    configuration = configurations.publishRuntime
+    configuration = configurations.publishRuntime.get()
     isUploadDescriptor = false
     repositories {
         ivy {

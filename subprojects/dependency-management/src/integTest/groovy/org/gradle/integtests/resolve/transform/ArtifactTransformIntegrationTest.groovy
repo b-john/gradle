@@ -45,21 +45,26 @@ allprojects {
     }
 }
 
-class FileSizer extends ArtifactTransform {
-    FileSizer() {
-        println "Creating FileSizer"
-    }
-    
-    List<File> transform(File input) {
-        assert outputDirectory.directory && outputDirectory.list().length == 0
-        def output = new File(outputDirectory, input.name + ".txt")
-        println "Transforming \${input.name} to \${output.name}"
-        output.text = String.valueOf(input.length())
-        return [output]
-    }
-}
-
+$fileSizer
 """
+    }
+
+    private static String getFileSizer() {
+        """
+            class FileSizer extends org.gradle.api.artifacts.transform.ArtifactTransform {
+                FileSizer() {
+                    println "Creating FileSizer"
+                }
+                
+                List<File> transform(File input) {
+                    assert outputDirectory.directory && outputDirectory.list().length == 0
+                    def output = new File(outputDirectory, input.name + ".txt")
+                    println "Transforming \${input.name} to \${output.name}"
+                    output.text = String.valueOf(input.length())
+                    return [output]
+                }
+            }
+        """
     }
 
     def "applies transforms to artifacts for external dependencies matching on implicit format attribute"() {
@@ -103,6 +108,47 @@ class FileSizer extends ArtifactTransform {
 
         then:
         output.count("Transforming") == 0
+    }
+
+    def "can use transformations in build script dependencies"() {
+        file("buildSrc/src/main/groovy/FileSizer.groovy") << fileSizer
+
+        file("script-with-buildscript-block.gradle") << """   
+            buildscript {
+
+                def artifactType = Attribute.of('artifactType', String)
+                dependencies {
+
+                    registerTransform {
+                        from.attribute(artifactType, 'jar')
+                        to.attribute(artifactType, 'size')
+                        artifactTransform(FileSizer)
+                    }
+
+                    classpath 'org.apache.commons:commons-math3:3.6.1'
+                }
+                repositories { jcenter() }
+                println(
+                    configurations.classpath.incoming.artifactView {
+                            attributes.attribute(artifactType, "size")
+                        }.artifacts.artifactFiles.files
+                )                                   
+                println(
+                    configurations.classpath.incoming.artifactView {
+                            attributes.attribute(artifactType, "size")
+                        }.artifacts.artifactFiles.files
+                )                                   
+            }
+        """
+
+        buildFile << """
+            apply from: 'script-with-buildscript-block.gradle'
+        """
+
+        expect:
+        succeeds("help", "--info")
+        output.count("Creating FileSizer") == 1
+        output.count("Transforming commons-math3") == 1
     }
 
     def "applies transforms to files from file dependencies matching on implicit format attribute"() {
@@ -1141,6 +1187,7 @@ Found the following transforms:
             project(':lib') {
                 task jar1(type: Jar) { archiveName = 'jar1.jar' }
                 task jar2(type: Jar) { archiveName = 'jar2.jar' }
+                tasks.withType(Jar) { destinationDir = buildDir }
                 artifacts { compile jar1, jar2 }
             }
 
@@ -1243,7 +1290,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Failed to transform file 'a.jar' to match attributes {artifactType=size} using transform TransformWithIllegalArgumentException")
         failure.assertHasCause("broken")
 
@@ -1292,7 +1340,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Could not download test-impl.jar (test:test:1.3)")
 
         and:
@@ -1329,7 +1378,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("broken")
 
         and:
@@ -1366,7 +1416,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Failed to transform file 'a.jar' to match attributes {artifactType=size} using transform ToNullTransform")
         failure.assertHasCause("Transform returned null result.")
     }
@@ -1393,7 +1444,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Failed to transform file 'a.jar' to match attributes {artifactType=size} using transform NoExistTransform")
         failure.assertHasCause("Transform output file this_file_does_not.exist does not exist.")
 
@@ -1431,7 +1483,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Failed to transform file 'a.jar' to match attributes {artifactType=size} using transform SomewhereElseTransform")
         failure.assertHasCause("Transform output file ${testDirectory.file('other.jar')} is not a child of the transform's input file or output directory.")
     }
@@ -1461,7 +1514,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Failed to transform file 'a.jar' to match attributes {artifactType=size} using transform BrokenTransform")
         failure.assertHasCause("Could not create an instance of type BrokenTransform.")
         failure.assertHasCause("broken")
@@ -1516,7 +1570,8 @@ Found the following transforms:
         fails "resolve"
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasDescription("Execution failed for task ':resolve'.")
+        failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Failed to transform file 'broken.jar' to match attributes {artifactType=size} using transform TransformWithIllegalArgumentException")
         failure.assertHasCause("broken: broken.jar")
         failure.assertHasCause("Could not download a.jar (test:a:1.3)")
@@ -1638,7 +1693,9 @@ Found the following transforms:
                 def file1 = file('lib1.size')
                 file1.text = 'some text'
 
-                task lib1(type: Jar) {}
+                task lib1(type: Jar) {
+                    destinationDir = buildDir
+                }
     
                 dependencies {
                     compile files(lib1)
@@ -1761,7 +1818,7 @@ Found the following transforms:
         then:
         output.count("> Dependency:") == 1
         output.contains("> Dependency: task ':app:dependent' -> task ':app:resolve'")
-        output.contains("> Transform lib1.jar (project :lib) with FileSizer")
+        output.contains("> Transform artifact lib1.jar (project :lib) with FileSizer")
         output.contains("> Task :app:resolve")
     }
 
@@ -1799,6 +1856,4 @@ Found the following transforms:
             }
 """
     }
-
-
-    }
+}

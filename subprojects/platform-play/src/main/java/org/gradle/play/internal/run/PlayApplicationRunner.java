@@ -20,9 +20,8 @@ import com.google.common.collect.ImmutableSet;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.file.collections.ImmutableFileCollection;
 import org.gradle.deployment.internal.Deployment;
-import org.gradle.internal.fingerprint.ClasspathFingerprinter;
+import org.gradle.internal.fingerprint.classpath.ClasspathFingerprinter;
 import org.gradle.internal.hash.HashCode;
-import org.gradle.normalization.internal.InputNormalizationStrategy;
 import org.gradle.process.internal.JavaExecHandleBuilder;
 import org.gradle.process.internal.worker.WorkerProcess;
 import org.gradle.process.internal.worker.WorkerProcessBuilder;
@@ -46,7 +45,7 @@ public class PlayApplicationRunner {
         process.start();
 
         PlayRunWorkerServerProtocol workerServer = process.getConnection().addOutgoing(PlayRunWorkerServerProtocol.class);
-        PlayApplication playApplication = new PlayApplication(new PlayClassloaderMonitorDeploymentDecorator(deployment, spec, adapter), workerServer, process);
+        PlayApplication playApplication = new PlayApplication(new PlayClassloaderMonitorDeploymentDecorator(deployment, spec), workerServer, process);
         process.getConnection().addIncoming(PlayRunWorkerClientProtocol.class, playApplication);
         process.getConnection().connect();
         playApplication.waitForRunning();
@@ -56,13 +55,11 @@ public class PlayApplicationRunner {
     private class PlayClassloaderMonitorDeploymentDecorator implements Deployment {
         private final Deployment delegate;
         private final FileCollection applicationClasspath;
-        private final boolean isPlay22;
         private HashCode classpathHash;
 
-        private PlayClassloaderMonitorDeploymentDecorator(Deployment delegate, PlayRunSpec runSpec, VersionedPlayRunAdapter adapter) {
+        private PlayClassloaderMonitorDeploymentDecorator(Deployment delegate, PlayRunSpec runSpec) {
             this.delegate = delegate;
             this.applicationClasspath = collectApplicationClasspath(runSpec);
-            this.isPlay22 = adapter instanceof PlayRunAdapterV22X;
         }
 
         private FileCollection collectApplicationClasspath(PlayRunSpec runSpec) {
@@ -76,11 +73,6 @@ public class PlayApplicationRunner {
         @Override
         public Status status() {
             final Status delegateStatus = delegate.status();
-
-            if (isPlay22) {
-                // PlayRunAdapterV22X doesn't load assets from directory directly
-                return delegateStatus;
-            }
 
             if (!delegateStatus.hasChanged()) {
                 return delegateStatus;
@@ -105,7 +97,7 @@ public class PlayApplicationRunner {
 
         private boolean applicationClasspathChanged() {
             HashCode oldClasspathHash = classpathHash;
-            classpathHash = fingerprinter.fingerprint(applicationClasspath, InputNormalizationStrategy.NO_NORMALIZATION).getHash();
+            classpathHash = fingerprinter.fingerprint(applicationClasspath).getHash();
             return !classpathHash.equals(oldClasspathHash);
         }
     }

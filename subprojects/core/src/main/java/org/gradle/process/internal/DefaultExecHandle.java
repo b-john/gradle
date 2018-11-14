@@ -26,7 +26,7 @@ import org.gradle.internal.event.ListenerBroadcast;
 import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.operations.CurrentBuildOperationPreservingRunnable;
 import org.gradle.process.ExecResult;
-import org.gradle.process.internal.shutdown.ShutdownHookActionRegister;
+import org.gradle.process.internal.shutdown.ShutdownHooks;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -196,7 +196,7 @@ public class DefaultExecHandle implements ExecHandle, ProcessSettings {
     }
 
     private void setEndStateInfo(ExecHandleState newState, int exitValue, Throwable failureCause) {
-        ShutdownHookActionRegister.removeAction(shutdownHookAction);
+        ShutdownHooks.removeShutdownHook(shutdownHookAction);
         buildCancellationToken.removeCallback(shutdownHookAction);
         ExecHandleState currentState;
         lock.lock();
@@ -260,7 +260,8 @@ public class DefaultExecHandle implements ExecHandle, ProcessSettings {
                 try {
                     stateChanged.await();
                 } catch (InterruptedException e) {
-                    //ok, wrapping up
+                    execHandleRunner.abortProcess();
+                    throw UncheckedException.throwAsUncheckedException(e);
                 }
             }
 
@@ -299,7 +300,7 @@ public class DefaultExecHandle implements ExecHandle, ProcessSettings {
                 try {
                     stateChanged.await();
                 } catch (InterruptedException e) {
-                    //ok, wrapping up...
+                    execHandleRunner.abortProcess();
                     throw UncheckedException.throwAsUncheckedException(e);
                 }
             }
@@ -329,7 +330,7 @@ public class DefaultExecHandle implements ExecHandle, ProcessSettings {
     }
 
     void started() {
-        ShutdownHookActionRegister.addAction(shutdownHookAction);
+        ShutdownHooks.addShutdownHook(shutdownHookAction);
         buildCancellationToken.addCallback(shutdownHookAction);
         setState(ExecHandleState.STARTED);
         broadcast.getSource().executionStarted(this);
@@ -425,8 +426,14 @@ public class DefaultExecHandle implements ExecHandle, ProcessSettings {
 
         @Override
         public void stop() {
-            inputHandler.stop();
             outputHandler.stop();
+            inputHandler.stop();
+        }
+
+        @Override
+        public void disconnect() {
+            outputHandler.disconnect();
+            inputHandler.disconnect();
         }
     }
 }

@@ -19,15 +19,14 @@ package org.gradle.api.tasks.compile;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
-import org.apache.commons.lang.StringUtils;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.ProjectLayout;
-import org.gradle.api.internal.file.collections.ImmutableFileCollection;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.CompileClasspath;
 import org.gradle.api.tasks.Console;
 import org.gradle.api.tasks.Input;
@@ -40,7 +39,6 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.process.CommandLineArgumentProvider;
 import org.gradle.util.CollectionUtils;
-import org.gradle.util.DeprecationLogger;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -97,7 +95,7 @@ public class CompileOptions extends AbstractOptions {
     @Inject
     public CompileOptions(ProjectLayout projectLayout, ObjectFactory objectFactory) {
         this.annotationProcessorGeneratedSourcesDirectory = objectFactory.property(File.class);
-        this.headerOutputDirectory = projectLayout.directoryProperty();
+        this.headerOutputDirectory = objectFactory.directoryProperty();
     }
 
     /**
@@ -258,39 +256,6 @@ public class CompileOptions extends AbstractOptions {
      */
     public void setForkOptions(ForkOptions forkOptions) {
         this.forkOptions = forkOptions;
-    }
-
-    /**
-     * Returns the bootstrap classpath to be used for the compiler process. Defaults to {@code null}.
-     *
-     * @deprecated Use {@link #getBootstrapClasspath()} instead.
-     */
-    @Deprecated
-    @Internal
-    @SuppressWarnings("DeprecatedIsStillUsed")
-    public String getBootClasspath() {
-        DeprecationLogger.nagUserOfReplacedProperty("CompileOptions.bootClasspath", "CompileOptions.bootstrapClasspath");
-        return bootstrapClasspath == null ? null : bootstrapClasspath.getAsPath();
-    }
-
-    /**
-     * Sets the bootstrap classpath to be used for the compiler process. Defaults to {@code null}.
-     *
-     * @deprecated Use {@link #setBootstrapClasspath(FileCollection)} instead.
-     */
-    @Deprecated
-    public void setBootClasspath(String bootClasspath) {
-        DeprecationLogger.nagUserOfReplacedProperty("CompileOptions.bootClasspath", "CompileOptions.bootstrapClasspath");
-        if (bootClasspath == null) {
-            this.bootstrapClasspath = null;
-        } else {
-            String[] paths = StringUtils.split(bootClasspath, File.pathSeparatorChar);
-            List<File> files = Lists.newArrayListWithCapacity(paths.length);
-            for (String path : paths) {
-                files.add(new File(path));
-            }
-            this.bootstrapClasspath = ImmutableFileCollection.of(files);
-        }
     }
 
     /**
@@ -469,7 +434,6 @@ public class CompileOptions extends AbstractOptions {
      * @return the source path
      * @see #setSourcepath(FileCollection)
      */
-    @Incubating
     @Optional
     @Nullable
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -483,27 +447,27 @@ public class CompileOptions extends AbstractOptions {
      *
      * @param sourcepath the source path
      */
-    @Incubating
     public void setSourcepath(@Nullable FileCollection sourcepath) {
         this.sourcepath = sourcepath;
     }
 
     /**
-     * Returns the classpath to use to load annotation processors. This path is also used for annotation processor discovery. If set to {@code null}, it means use the compile classpath.
+     * Returns the classpath to use to load annotation processors. This path is also used for annotation processor discovery.
      *
-     * @return The annotation processor path, or {@code null} to use the compile classpath.
+     * @return The annotation processor path, or {@code null} if annotation processing is disabled.
      * @since 3.4
      */
     @Nullable
-    @Internal // Handled on the compile task
+    @Optional
+    @Classpath
     public FileCollection getAnnotationProcessorPath() {
         return annotationProcessorPath;
     }
 
     /**
-     * Set the classpath to use to load annotation processors. This path is also used for annotation processor discovery. The value can be {@code null}, which means use the compile classpath.
+     * Set the classpath to use to load annotation processors. This path is also used for annotation processor discovery.
      *
-     * @param annotationProcessorPath The annotation processor path, or {@code null} to use the compile classpath.
+     * @param annotationProcessorPath The annotation processor path, or {@code null} to disable annotation processing.
      * @since 3.4
      */
     public void setAnnotationProcessorPath(@Nullable FileCollection annotationProcessorPath) {

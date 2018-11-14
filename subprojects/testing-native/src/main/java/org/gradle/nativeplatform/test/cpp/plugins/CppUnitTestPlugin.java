@@ -21,9 +21,11 @@ import org.gradle.api.Incubating;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.attributes.Usage;
+import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.attributes.ImmutableAttributesFactory;
 import org.gradle.api.internal.project.ProjectInternal;
@@ -31,6 +33,7 @@ import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.TaskContainer;
+import org.gradle.api.tasks.TaskProvider;
 import org.gradle.language.base.plugins.LifecycleBasePlugin;
 import org.gradle.language.cpp.CppApplication;
 import org.gradle.language.cpp.CppBinary;
@@ -43,7 +46,8 @@ import org.gradle.language.cpp.plugins.CppBasePlugin;
 import org.gradle.language.internal.NativeComponentFactory;
 import org.gradle.language.nativeplatform.internal.toolchains.ToolChainSelector;
 import org.gradle.language.swift.tasks.UnexportMainSymbol;
-import org.gradle.nativeplatform.OperatingSystemFamily;
+import org.gradle.api.platform.TargetMachine;
+import org.gradle.api.platform.TargetMachineFactory;
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform;
 import org.gradle.nativeplatform.tasks.InstallExecutable;
 import org.gradle.nativeplatform.test.cpp.CppTestSuite;
@@ -74,13 +78,15 @@ public class CppUnitTestPlugin implements Plugin<ProjectInternal> {
     private final ToolChainSelector toolChainSelector;
     private final ObjectFactory objectFactory;
     private final ImmutableAttributesFactory attributesFactory;
+    private final TargetMachineFactory targetMachineFactory;
 
     @Inject
-    public CppUnitTestPlugin(NativeComponentFactory componentFactory, ToolChainSelector toolChainSelector, ObjectFactory objectFactory, ImmutableAttributesFactory attributesFactory) {
+    public CppUnitTestPlugin(NativeComponentFactory componentFactory, ToolChainSelector toolChainSelector, ObjectFactory objectFactory, ImmutableAttributesFactory attributesFactory, TargetMachineFactory targetMachineFactory) {
         this.componentFactory = componentFactory;
         this.toolChainSelector = toolChainSelector;
         this.objectFactory = objectFactory;
         this.attributesFactory = attributesFactory;
+        this.targetMachineFactory = targetMachineFactory;
     }
 
     @Override
@@ -98,22 +104,22 @@ public class CppUnitTestPlugin implements Plugin<ProjectInternal> {
         project.afterEvaluate(new Action<Project>() {
             @Override
             public void execute(final Project project) {
-                testComponent.getOperatingSystems().lockNow();
-                Set<OperatingSystemFamily> operatingSystemFamilies = testComponent.getOperatingSystems().get();
-                if (operatingSystemFamilies.isEmpty()) {
-                    throw new IllegalArgumentException("An operating system needs to be specified for the unit test.");
+                testComponent.getTargetMachines().finalizeValue();
+                Set<TargetMachine> targetMachines = testComponent.getTargetMachines().get();
+                if (targetMachines.isEmpty()) {
+                    throw new IllegalArgumentException("A target machine needs to be specified for the unit test.");
                 }
 
-                boolean hasHostOperatingSystem = CollectionUtils.any(operatingSystemFamilies, new Spec<OperatingSystemFamily>() {
+                // TODO: should we not iterate over target machines?
+                TargetMachine targetMachine = CollectionUtils.findFirst(targetMachines, new Spec<TargetMachine>() {
                     @Override
-                    public boolean isSatisfiedBy(OperatingSystemFamily element) {
-                        return DefaultNativePlatform.getCurrentOperatingSystem().toFamilyName().equals(element.getName());
+                    public boolean isSatisfiedBy(TargetMachine targetMachine) {
+                        return DefaultNativePlatform.getCurrentOperatingSystem().toFamilyName().equals(targetMachine.getOperatingSystemFamily().getName());
                     }
                 });
 
-                if (hasHostOperatingSystem) {
+                if (targetMachine != null) {
                     String operatingSystemSuffix = "";
-                    OperatingSystemFamily operatingSystem = objectFactory.named(OperatingSystemFamily.class, DefaultNativePlatform.getCurrentOperatingSystem().toFamilyName());
                     Usage runtimeUsage = objectFactory.named(Usage.class, Usage.NATIVE_RUNTIME);
                     Provider<String> group = project.provider(new Callable<String>() {
                         @Override
@@ -135,12 +141,12 @@ public class CppUnitTestPlugin implements Plugin<ProjectInternal> {
                     attributesDebug.attribute(OPTIMIZED_ATTRIBUTE, false);
 
                     // TODO: Fix this naming convention to follow C++ executable/library
-                    NativeVariantIdentity debugVariant = new NativeVariantIdentity("debug" + operatingSystemSuffix, testComponent.getBaseName(), group, version, true, false, operatingSystem,
+                    NativeVariantIdentity debugVariant = new NativeVariantIdentity("debug" + operatingSystemSuffix, testComponent.getBaseName(), group, version, true, false, targetMachine,
                         null,
                         new DefaultUsageContext("debug" + operatingSystemSuffix + "Runtime", runtimeUsage, attributesDebug));
 
-                    ToolChainSelector.Result<CppPlatform> result = toolChainSelector.select(CppPlatform.class);
-                    testComponent.addExecutable("executable", debugVariant, result.getTargetPlatform(), result.getToolChain(), result.getPlatformToolProvider());
+                    ToolChainSelector.Result<CppPlatform> result = toolChainSelector.select(CppPlatform.class, targetMachine);
+                    testComponent.addExecutable(debugVariant, result.getTargetPlatform(), result.getToolChain(), result.getPlatformToolProvider());
                     // TODO: Publishing for test executable?
 
                     final TaskContainer tasks = project.getTasks();
@@ -155,7 +161,7 @@ public class CppUnitTestPlugin implements Plugin<ProjectInternal> {
                             if (mainComponent != null) {
                                 mainComponent.getBinaries().whenElementFinalized(new Action<CppBinary>() {
                                     @Override
-                                    public void execute(CppBinary testedBinary) {
+                                    public void execute(final CppBinary testedBinary) {
                                         if (testedBinary != mainComponent.getDevelopmentBinary().get()) {
                                             return;
                                         }
@@ -168,14 +174,25 @@ public class CppUnitTestPlugin implements Plugin<ProjectInternal> {
                                         executable.getImplementationDependencies().extendsFrom(((DefaultCppBinary) testedBinary).getImplementationDependencies());
 
                                         // Configure test binary to link against tested component compiled objects
-                                        FileCollection testableObjects;
+                                        ConfigurableFileCollection testableObjects = project.files();
                                         if (mainComponent instanceof CppApplication) {
-                                            UnexportMainSymbol unexportMainSymbol = tasks.create("relocateMainForTest", UnexportMainSymbol.class);
-                                            unexportMainSymbol.getOutputDirectory().set(project.getLayout().getBuildDirectory().dir("obj/main/for-test"));
-                                            unexportMainSymbol.getObjects().from(testedBinary.getObjects());
-                                            testableObjects = unexportMainSymbol.getRelocatedObjects();
+                                            TaskProvider<UnexportMainSymbol> unexportMainSymbol = tasks.register("relocateMainForTest", UnexportMainSymbol.class, new Action<UnexportMainSymbol>() {
+                                                @Override
+                                                public void execute(UnexportMainSymbol unexportMainSymbol) {
+                                                    unexportMainSymbol.getOutputDirectory().set(project.getLayout().getBuildDirectory().dir("obj/main/for-test"));
+                                                    unexportMainSymbol.getObjects().from(testedBinary.getObjects());
+                                                }
+                                            });
+                                            // TODO: builtBy unnecessary?
+                                            testableObjects.builtBy(unexportMainSymbol);
+                                            testableObjects.from(unexportMainSymbol.map(new Transformer<FileCollection, UnexportMainSymbol>() {
+                                                @Override
+                                                public FileCollection transform(UnexportMainSymbol unexportMainSymbol) {
+                                                    return unexportMainSymbol.getRelocatedObjects();
+                                                }
+                                            }));
                                         } else {
-                                            testableObjects = testedBinary.getObjects();
+                                            testableObjects.from(testedBinary.getObjects());
                                         }
                                         Dependency linkDependency = project.getDependencies().create(testableObjects);
                                         executable.getLinkConfiguration().getDependencies().add(linkDependency);
@@ -184,22 +201,26 @@ public class CppUnitTestPlugin implements Plugin<ProjectInternal> {
                             }
 
                             // TODO: Replace with native test task
-                            final RunTestExecutable testTask = tasks.create(executable.getNames().getTaskName("run"), RunTestExecutable.class);
-                            testTask.setGroup(LifecycleBasePlugin.VERIFICATION_GROUP);
-                            testTask.setDescription("Executes C++ unit tests.");
-
-                            final InstallExecutable installTask = executable.getInstallTask().get();
-                            testTask.onlyIf(new Spec<Task>() {
+                            final TaskProvider<RunTestExecutable> testTask = tasks.register(executable.getNames().getTaskName("run"), RunTestExecutable.class, new Action<RunTestExecutable>() {
                                 @Override
-                                public boolean isSatisfiedBy(Task element) {
-                                    return executable.getInstallDirectory().get().getAsFile().exists();
+                                public void execute(RunTestExecutable testTask) {
+                                    testTask.setGroup(LifecycleBasePlugin.VERIFICATION_GROUP);
+                                    testTask.setDescription("Executes C++ unit tests.");
+
+                                    final InstallExecutable installTask = executable.getInstallTask().get();
+                                    testTask.onlyIf(new Spec<Task>() {
+                                        @Override
+                                        public boolean isSatisfiedBy(Task element) {
+                                            return executable.getInstallDirectory().get().getAsFile().exists();
+                                        }
+                                    });
+                                    testTask.getInputs().dir(executable.getInstallDirectory());
+                                    testTask.setExecutable(installTask.getRunScriptFile().get().getAsFile());
+                                    testTask.dependsOn(testComponent.getTestBinary().get().getInstallDirectory());
+                                    // TODO: Honor changes to build directory
+                                    testTask.setOutputDir(project.getLayout().getBuildDirectory().dir("test-results/" + executable.getNames().getDirName()).get().getAsFile());
                                 }
                             });
-                            testTask.getInputs().dir(executable.getInstallDirectory());
-                            testTask.setExecutable(installTask.getRunScriptFile().get().getAsFile());
-                            testTask.dependsOn(testComponent.getTestBinary().get().getInstallDirectory());
-                            // TODO: Honor changes to build directory
-                            testTask.setOutputDir(project.getLayout().getBuildDirectory().dir("test-results/" + executable.getNames().getDirName()).get().getAsFile());
                             executable.getRunTask().set(testTask);
                         }
                     });

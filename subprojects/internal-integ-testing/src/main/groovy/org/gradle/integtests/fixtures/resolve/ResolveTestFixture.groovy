@@ -109,7 +109,7 @@ allprojects {
         def expectedRoot = "[id:${graph.root.id}][mv:${graph.root.moduleVersionId}][reason:${graph.root.reason}]".toString()
         assert actualRoot.startsWith(expectedRoot)
 
-        def expectedFirstLevel = graph.root.deps.findAll { !graph.constraints.contains(it.selected) }.collect { "[${it.selected.moduleVersionId}:${it.selected.configuration}]" } as Set
+        def expectedFirstLevel = graph.root.deps.findAll { !it.constraint }.collect { "[${it.selected.moduleVersionId}:${it.selected.configuration}]" } as Set
 
         def actualFirstLevel = findLines(configDetails, 'first-level')
         compare("first level dependencies", actualFirstLevel, expectedFirstLevel)
@@ -124,7 +124,7 @@ allprojects {
         compare("lenient filtered first level dependencies", actualFirstLevel, expectedFirstLevel)
 
         def actualConfigurations = findLines(configDetails, 'configuration') as Set
-        def expectedConfigurations = graph.nodesWithoutRoot.collect { "[${it.moduleVersionId}]" }
+        def expectedConfigurations = graph.nodesWithoutRoot.collect { "[${it.moduleVersionId}]".toString() } - graph.virtualConfigurations.collect { "[${it}]".toString() }
         compare("configurations in graph", actualConfigurations, expectedConfigurations)
 
         def actualComponents = findLines(configDetails, 'component')
@@ -135,7 +135,7 @@ allprojects {
         compareNodes("components in graph", parseNodes(actualComponents), parseNodes(expectedComponents))
 
         def actualEdges = findLines(configDetails, 'dependency')
-        def expectedEdges = graph.edges.collect { "[from:${it.from.id}][${it.requested}->${it.selected.id}]" }
+        def expectedEdges = graph.edges.collect { "${it.constraint ? '[constraint]' : ''}[from:${it.from.id}][${it.requested}->${it.selected.id}]" }
         compare("edges in graph", actualEdges, expectedEdges)
 
         def expectedArtifacts = graph.artifactNodes.collect { "[${it.moduleVersionId}][${it.artifactName}]" }
@@ -321,7 +321,7 @@ allprojects {
         private NodeBuilder root
         private String defaultConfig
 
-        final Set<NodeBuilder> constraints = new LinkedHashSet<>()
+        final Set<String> virtualConfigurations = []
 
         GraphBuilder(String defaultConfig) {
             this.defaultConfig = defaultConfig
@@ -335,6 +335,10 @@ allprojects {
             def nodes = new HashSet<>()
             visitDeps(root.deps, nodes, new HashSet<>())
             return nodes
+        }
+
+        void virtualConfiguration(String id) {
+            virtualConfigurations << id
         }
 
         private void visitDeps(List<EdgeBuilder> edges, Set<NodeBuilder> nodes, Set<NodeBuilder> seen) {
@@ -459,6 +463,7 @@ allprojects {
         final String requested
         final NodeBuilder from
         NodeBuilder selected
+        boolean constraint
 
         EdgeBuilder(NodeBuilder from, String requested, NodeBuilder selected) {
             this.from = from
@@ -590,12 +595,11 @@ allprojects {
         /**
          * Defines a link between nodes created through a dependency constraint.
          */
-        NodeBuilder edgeFromConstraint(String requested, String selectedModuleVersionId, @DelegatesTo(NodeBuilder) Closure cl = {}) {
+        NodeBuilder constraint(String requested, String selectedModuleVersionId = requested, @DelegatesTo(NodeBuilder) Closure cl = {}) {
             def node = graph.node(selectedModuleVersionId, selectedModuleVersionId)
-            deps << new EdgeBuilder(this, requested, node)
-            if (this == graph.root) {
-                graph.constraints.add(node)
-            }
+            def edge = new EdgeBuilder(this, requested, node)
+            edge.constraint = true
+            deps << edge
             cl.resolveStrategy = Closure.DELEGATE_ONLY
             cl.delegate = node
             cl.call()
@@ -717,8 +721,12 @@ allprojects {
             this
         }
 
-        NodeBuilder byConstraint(String reason) {
-            reasons << "${ComponentSelectionCause.CONSTRAINT.defaultReason}: $reason".toString()
+        NodeBuilder byConstraint(String reason = null) {
+            if (reason == null) {
+                reasons << ComponentSelectionCause.CONSTRAINT.defaultReason
+            } else {
+                reasons << "${ComponentSelectionCause.CONSTRAINT.defaultReason}: $reason".toString()
+            }
             this
         }
 
@@ -739,6 +747,15 @@ allprojects {
             }
             this
         }
+    }
+
+    /**
+     * Enables Maven derived variants, as if the Java plugin was applied
+     */
+    void addDefaultVariantDerivationStrategy() {
+        buildFile << """
+            allprojects { dependencies.components.variantDerivationStrategy = new org.gradle.internal.component.external.model.JavaEcosystemVariantDerivationStrategy() }
+        """
     }
 }
 
@@ -775,7 +792,7 @@ class GenerateGraphTask extends DefaultTask {
                 writer.println("component:${formatComponent(it)}")
             }
             configuration.incoming.resolutionResult.allDependencies.each {
-                writer.println("dependency:[from:${it.from.id}][${it.requested}->${it.selected.id}]")
+                writer.println("dependency:${it.constraint ? '[constraint]' : '' }[from:${it.from.id}][${it.requested}->${it.selected.id}]")
             }
             if (buildArtifacts) {
                 configuration.files.each {
@@ -855,7 +872,7 @@ class GenerateGraphTask extends DefaultTask {
     def formatReason(ComponentSelectionReasonInternal reason) {
         def reasons = reason.descriptions.collect {
             if (it.hasCustomDescription() && it.cause != ComponentSelectionCause.REQUESTED) {
-                "${it.cause.defaultReason}: ${it.description}"
+                "${it.cause.defaultReason}: ${it.description}".replaceAll('\n', ' ')
             } else {
                 it.description
             }

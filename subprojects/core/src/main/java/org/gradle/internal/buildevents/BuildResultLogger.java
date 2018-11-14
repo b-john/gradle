@@ -15,7 +15,6 @@
  */
 package org.gradle.internal.buildevents;
 
-import org.gradle.BuildAdapter;
 import org.gradle.BuildResult;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.internal.logging.format.DurationFormatter;
@@ -30,7 +29,7 @@ import static org.gradle.internal.logging.text.StyledTextOutput.Style.SuccessHea
 /**
  * A {@link org.gradle.BuildListener} which logs the final result of the build.
  */
-public class BuildResultLogger extends BuildAdapter {
+public class BuildResultLogger {
 
     private final StyledTextOutputFactory textOutputFactory;
     private final BuildStartedTime buildStartedTime;

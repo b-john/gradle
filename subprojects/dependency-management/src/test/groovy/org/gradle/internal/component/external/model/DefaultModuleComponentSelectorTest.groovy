@@ -25,7 +25,7 @@ import spock.lang.Unroll
 
 import static org.gradle.internal.component.local.model.TestComponentIdentifiers.newProjectId
 import static org.gradle.util.Matchers.strictlyEquals
-import static org.gradle.util.TestUtil.attributes
+import static org.gradle.util.AttributeTestUtil.attributes
 
 class DefaultModuleComponentSelectorTest extends Specification {
     private static ImmutableVersionConstraint v(String version) {
@@ -49,7 +49,7 @@ class DefaultModuleComponentSelectorTest extends Specification {
         selector.module == 'some-name'
         selector.version == '1.0'
         selector.versionConstraint.requiredVersion == '1.0'
-        selector.versionConstraint.preferredVersion == '1.0'
+        selector.versionConstraint.preferredVersion == ''
         selector.versionConstraint.strictVersion == ''
         selector.versionConstraint.rejectedVersions == []
         selector.displayName == 'some-group:some-name:1.0'
@@ -64,12 +64,12 @@ class DefaultModuleComponentSelectorTest extends Specification {
         versionSelector.toString() == "some-group:some-name:1.0"
 
         def branchSelector = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId('some-group', 'some-name'), b('release'))
-        branchSelector.displayName == "some-group:some-name (branch: release)"
-        branchSelector.toString() == "some-group:some-name (branch: release)"
+        branchSelector.displayName == "some-group:some-name:{branch release}"
+        branchSelector.toString() == "some-group:some-name:{branch release}"
 
         def bothSelector = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId('some-group', 'some-name'), v('1.0', 'release'))
-        bothSelector.displayName == "some-group:some-name:1.0 (branch: release)"
-        bothSelector.toString() == "some-group:some-name:1.0 (branch: release)"
+        bothSelector.displayName == "some-group:some-name:{require 1.0; branch release}"
+        bothSelector.toString() == "some-group:some-name:{require 1.0; branch release}"
 
         def noSelector = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId('some-group', 'some-name'), v(''))
         noSelector.displayName == "some-group:some-name"
@@ -119,7 +119,7 @@ class DefaultModuleComponentSelectorTest extends Specification {
         selector.module == 'some-name'
         selector.version == '1.0'
         selector.versionConstraint.requiredVersion == '1.0'
-        selector.versionConstraint.preferredVersion == '1.0'
+        selector.versionConstraint.preferredVersion == ''
         selector.versionConstraint.strictVersion == ''
         selector.versionConstraint.rejectedVersions == []
         selector.displayName == 'some-group:some-name:1.0'
@@ -138,7 +138,7 @@ class DefaultModuleComponentSelectorTest extends Specification {
         selector.module == 'some-name'
         selector.version == '1.0'
         selector.versionConstraint.requiredVersion == '1.0'
-        selector.versionConstraint.preferredVersion == '1.0'
+        selector.versionConstraint.preferredVersion == ''
         selector.versionConstraint.strictVersion == ''
         selector.versionConstraint.rejectedVersions == []
         selector.attributes.keySet() == [customAttr, otherAttr] as Set

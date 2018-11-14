@@ -17,13 +17,10 @@ package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
 
-/**
- * This also tests maven's optional dependencies for the cases where we only have pom metadata available.
- */
 class PublishedDependencyConstraintsIntegrationTest extends AbstractModuleDependencyResolveTest {
 
     boolean featureAvailable() {
-        gradleMetadataEnabled || (/*maven optional:*/ useMaven() && experimentalEnabled)
+        gradleMetadataEnabled
     }
 
     void "dependency constraint is ignored when feature is not enabled"() {
@@ -61,10 +58,11 @@ class PublishedDependencyConstraintsIntegrationTest extends AbstractModuleDepend
         run 'checkDeps'
 
         then:
-        resolve.expectGraph {
+        def expectedVariant = useMaven() ? 'runtime' : 'default'
+        resolve.expectDefaultConfiguration(expectedVariant).expectGraph {
             root(":", ":test:") {
-                module("org:first-level:1.0:default")
-                module("org:foo:1.0:default")
+                module("org:first-level:1.0")
+                module("org:foo:1.0")
             }
         }
     }
@@ -148,9 +146,10 @@ class PublishedDependencyConstraintsIntegrationTest extends AbstractModuleDepend
             root(":", ":test:") {
                 module("org:first-level:1.0") {
                     if (available) {
-                        def module = module("org:foo:1.1")
                         if (GradleMetadataResolveRunner.gradleMetadataEnabled) {
-                            module.byConstraint('published dependency constraint')
+                            constraint("org:foo:1.1", "org:foo:1.1").byConstraint('published dependency constraint')
+                        } else {
+                            constraint("org:foo:1.1", "org:foo:1.1")
                         }
                     }
                 }
@@ -215,7 +214,7 @@ class PublishedDependencyConstraintsIntegrationTest extends AbstractModuleDepend
             root(":", ":test:") {
                 module("org:first-level1:1.0") {
                     if (available) {
-                        module("org:foo:1.1")
+                        constraint("org:foo:1.1", "org:foo:1.1")
                     }
                 }
                 module("org:first-level2:1.0") {
@@ -292,7 +291,7 @@ class PublishedDependencyConstraintsIntegrationTest extends AbstractModuleDepend
                 }
                 module("org:first-level:1.0") {
                     if (available) {
-                        edge("org:foo:[1.0,1.1]", "org:foo:1.1")
+                        constraint("org:foo:[1.0,1.1]", "org:foo:1.1")
                     }
                 }
             }
@@ -393,7 +392,7 @@ class PublishedDependencyConstraintsIntegrationTest extends AbstractModuleDepend
             root(":", ":test:") {
                 module("org:first-level:1.0") {
                     if (available) {
-                        edge("org:bar:1.1", "org:foo:1.1").selectedByRule()
+                        constraint("org:bar:1.1", "org:foo:1.1").selectedByRule()
                         edge("org:foo:1.0", "org:foo:1.1").byConflictResolution("between versions 1.0 and 1.1")
                     } else {
                         module("org:foo:1.0")

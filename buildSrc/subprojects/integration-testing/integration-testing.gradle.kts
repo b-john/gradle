@@ -1,10 +1,5 @@
-plugins {
-    `java-gradle-plugin`
-}
-
-apply(plugin = "org.gradle.kotlin.kotlin-dsl")
-
 dependencies {
+    api(kotlin("stdlib"))
     implementation(project(":cleanup"))
     implementation(project(":configuration"))
     implementation(project(":kotlinDsl"))
@@ -15,24 +10,24 @@ dependencies {
 }
 
 gradlePlugin {
-    (plugins) {
-        "crossVersionTests" {
+    plugins {
+        register("crossVersionTests") {
             id = "gradlebuild.cross-version-tests"
             implementationClass = "org.gradle.gradlebuild.test.integrationtests.CrossVersionTestsPlugin"
         }
-        "distributionTesting" {
+        register("distributionTesting") {
             id = "gradlebuild.distribution-testing"
             implementationClass = "org.gradle.gradlebuild.test.integrationtests.DistributionTestingPlugin"
         }
-        "integrationTests" {
+        register("integrationTests") {
             id = "gradlebuild.integration-tests"
             implementationClass = "org.gradle.gradlebuild.test.integrationtests.IntegrationTestsPlugin"
         }
-        "intTestImage" {
+        register("intTestImage") {
             id = "gradlebuild.int-test-image"
             implementationClass = "org.gradle.gradlebuild.test.fixtures.IntTestImagePlugin"
         }
-        "testFixtures" {
+        register("testFixtures") {
             id = "gradlebuild.test-fixtures"
             implementationClass = "org.gradle.gradlebuild.test.fixtures.TestFixturesPlugin"
         }

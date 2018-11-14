@@ -16,9 +16,11 @@
 
 package org.gradle.api.internal.tasks;
 
+import org.gradle.api.Task;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.file.collections.ImmutableFileCollection;
 import org.gradle.api.tasks.FileNormalizer;
+import org.gradle.internal.file.TreeType;
 import org.gradle.internal.fingerprint.OutputNormalizer;
 
 import java.io.File;
@@ -52,13 +54,28 @@ class CacheableTaskOutputCompositeFilePropertyElementSpec implements CacheableTa
     }
 
     @Override
-    public OutputType getOutputType() {
+    public TreeType getOutputType() {
         return parentProperty.getOutputType();
     }
 
     @Override
     public Class<? extends FileNormalizer> getNormalizer() {
         return OutputNormalizer.class;
+    }
+
+    @Override
+    public void attachProducer(Task producer) {
+        // Ignore, should not be called
+    }
+
+    @Override
+    public void prepareValue() {
+        // Ignore, should not be called
+    }
+
+    @Override
+    public void cleanupValue() {
+        // Ignore, should not be called
     }
 
     @Override

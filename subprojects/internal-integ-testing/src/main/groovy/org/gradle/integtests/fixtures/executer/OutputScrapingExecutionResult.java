@@ -21,7 +21,6 @@ import org.gradle.api.Action;
 import org.gradle.integtests.fixtures.logging.GroupedOutputFixture;
 import org.gradle.internal.Pair;
 import org.gradle.internal.featurelifecycle.LoggingDeprecatedFeatureHandler;
-import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
 import org.gradle.launcher.daemon.client.DaemonStartupMessage;
 import org.gradle.launcher.daemon.server.DaemonStateCoordinator;
 import org.gradle.launcher.daemon.server.health.LowTenuredSpaceDaemonExpirationStrategy;
@@ -137,12 +136,6 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
             } else if (line.contains(LoggingDeprecatedFeatureHandler.WARNING_SUMMARY)) {
                 // Remove the "Deprecated Gradle features..." message and "See https://docs.gradle.org..."
                 i+=2;
-            } else if (line.contains(UnsupportedJavaRuntimeException.JAVA7_DEPRECATION_WARNING)) {
-                // Remove the Java 7 deprecation warning. This should be removed after 5.0
-                i++;
-                while (i < lines.size() && STACK_TRACE_ELEMENT.matcher(lines.get(i)).matches()) {
-                    i++;
-                }
             } else if (BUILD_RESULT_PATTERN.matcher(line).matches()) {
                 result.add(BUILD_RESULT_PATTERN.matcher(line).replaceFirst("BUILD $1 in 0s"));
                 i++;
@@ -170,7 +163,7 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     public ExecutionResult assertNotOutput(String expectedOutput) {
         String expectedText = LogContent.of(expectedOutput).withNormalizedEol();
         if (getOutput().contains(expectedText)|| getError().contains(expectedText)) {
-            throw new AssertionError(String.format("Found unexpected text in build output.%nExpected not present: %s%n%nOutput:%n=======%n%s%nError:%n======%n%s", expectedText, getOutput(), getError()));
+            failureOnUnexpectedOutput(String.format("Found unexpected text in build output.%nExpected not present: %s%n", expectedText));
         }
         return this;
     }
@@ -246,6 +239,12 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     }
 
     @Override
+    public ExecutionResult assertTasksExecutedAndNotSkipped(Object... taskPaths) {
+        assertTasksExecuted(taskPaths);
+        return assertTasksNotSkipped(taskPaths);
+    }
+
+    @Override
     public ExecutionResult assertTaskExecuted(String taskPath) {
         Set<String> actualTasks = findExecutedTasksInOrderStarted();
         if (!actualTasks.contains(taskPath)) {
@@ -317,15 +316,19 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     }
 
     private void failOnDifferentSets(String message, Set<String> expected, Set<String> actual) {
-        throw new AssertionError(String.format("%s%nExpected: %s%nActual: %s%nOutput:%n=======%n%s%nError:%n======%n%s", message, expected, actual, getOutput(), getError()));
+        failureOnUnexpectedOutput(String.format("%s%nExpected: %s%nActual: %s", message, expected, actual));
     }
 
     private void failOnMissingElement(String message, String expected, Set<String> actual) {
-        throw new AssertionError(String.format("%s%nExpected: %s%nActual: %s%nOutput:%n=======%n%s%nError:%n======%n%s", message, expected, actual, getOutput(), getError()));
+        failureOnUnexpectedOutput(String.format("%s%nExpected: %s%nActual: %s", message, expected, actual));
     }
 
     private void failOnMissingOutput(String message, String type, String expected, String actual) {
-        throw new AssertionError(String.format("%s%nExpected: %s%n%n%s:%n=======%n%s%nOutput:%n=======%n%s%nError:%n======%n%s", message, expected, type, actual, getOutput(), getError()));
+        failureOnUnexpectedOutput(String.format("%s%nExpected: %s%n%n%s:%n=======%n%s", message, expected, type, actual));
+    }
+
+    protected void failureOnUnexpectedOutput(String message) {
+        throw new AssertionError(String.format("%s%nOutput:%n=======%n%s%nError:%n======%n%s", message, getOutput(), getError()));
     }
 
     private List<String> grepTasks(final Pattern pattern) {

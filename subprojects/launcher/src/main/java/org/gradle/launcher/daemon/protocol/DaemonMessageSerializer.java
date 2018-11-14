@@ -27,6 +27,7 @@ import org.gradle.internal.logging.events.OutputEvent;
 import org.gradle.internal.logging.events.ProgressCompleteEvent;
 import org.gradle.internal.logging.events.ProgressEvent;
 import org.gradle.internal.logging.events.ProgressStartEvent;
+import org.gradle.internal.logging.events.PromptOutputEvent;
 import org.gradle.internal.logging.events.StyledTextOutputEvent;
 import org.gradle.internal.logging.events.UserInputRequestEvent;
 import org.gradle.internal.logging.events.UserInputResumeEvent;
@@ -35,6 +36,7 @@ import org.gradle.internal.logging.serializer.LogLevelChangeEventSerializer;
 import org.gradle.internal.logging.serializer.ProgressCompleteEventSerializer;
 import org.gradle.internal.logging.serializer.ProgressEventSerializer;
 import org.gradle.internal.logging.serializer.ProgressStartEventSerializer;
+import org.gradle.internal.logging.serializer.PromptOutputEventSerializer;
 import org.gradle.internal.logging.serializer.SpanSerializer;
 import org.gradle.internal.logging.serializer.StyledTextOutputEventSerializer;
 import org.gradle.internal.logging.serializer.UserInputRequestEventSerializer;
@@ -49,9 +51,13 @@ import org.gradle.internal.serialize.ListSerializer;
 import org.gradle.internal.serialize.Serializer;
 import org.gradle.launcher.daemon.diagnostics.DaemonDiagnostics;
 import org.gradle.launcher.exec.BuildActionParameters;
+import org.gradle.launcher.exec.BuildActionResult;
 import org.gradle.launcher.exec.DefaultBuildActionParameters;
+import org.gradle.tooling.internal.provider.serialization.SerializedPayload;
+import org.gradle.tooling.internal.provider.serialization.SerializedPayloadSerializer;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -85,6 +91,7 @@ public class DaemonMessageSerializer {
         // Output events
         registry.register(LogEvent.class, new LogEventSerializer(logLevelSerializer, throwableSerializer));
         registry.register(UserInputRequestEvent.class, new UserInputRequestEventSerializer());
+        registry.register(PromptOutputEvent.class, new PromptOutputEventSerializer());
         registry.register(UserInputResumeEvent.class, new UserInputResumeEventSerializer());
         registry.register(StyledTextOutputEvent.class, new StyledTextOutputEventSerializer(logLevelSerializer, new ListSerializer<StyledTextOutputEvent.Span>(new SpanSerializer(factory.getSerializerFor(StyledTextOutput.Style.class)))));
         registry.register(ProgressStartEvent.class, new ProgressStartEventSerializer());
@@ -100,25 +107,66 @@ public class DaemonMessageSerializer {
     }
 
     private static class SuccessSerializer implements Serializer<Success> {
-        private final Serializer<Object> payloadSerializer = new DefaultSerializer<Object>();
+        private final Serializer<Object> javaSerializer = new DefaultSerializer<Object>();
+        private final Serializer<SerializedPayload> payloadSerializer = new SerializedPayloadSerializer();
 
         @Override
         public void write(Encoder encoder, Success success) throws Exception {
             if (success.getValue() == null) {
-                encoder.writeBoolean(false);
+                encoder.writeByte((byte) 0);
+            } else if (success.getValue() instanceof BuildActionResult) {
+                BuildActionResult result = (BuildActionResult) success.getValue();
+                if (result.getResult() != null) {
+                    if (result.getException() != null || result.getFailure() != null || result.wasCancelled()) {
+                        throw new IllegalArgumentException("Result should not have both a result object and a failure associated with it.");
+                    }
+                    if (result.getResult().getHeader() == null && result.getResult().getSerializedModel().isEmpty()) {
+                        // Special case "build successful" when there is no result object to send
+                        encoder.writeByte((byte) 1);
+                    } else {
+                        encoder.writeByte((byte) 2);
+                        payloadSerializer.write(encoder, result.getResult());
+                    }
+                } else if (result.getFailure() != null){
+                    encoder.writeByte((byte) 3);
+                    encoder.writeBoolean(result.wasCancelled());
+                    payloadSerializer.write(encoder, result.getFailure());
+                } else {
+                    encoder.writeByte((byte) 4);
+                    encoder.writeBoolean(result.wasCancelled());
+                    javaSerializer.write(encoder, result.getException());
+                }
             } else {
-                encoder.writeBoolean(true);
-                payloadSerializer.write(encoder, success.getValue());
+                // Serialize anything else
+                encoder.writeByte((byte) 5);
+                javaSerializer.write(encoder, success.getValue());
             }
         }
 
         @Override
         public Success read(Decoder decoder) throws Exception {
-            boolean notNull = decoder.readBoolean();
-            if (notNull) {
-                return new Success(payloadSerializer.read(decoder));
-            } else {
-                return new Success(null);
+            boolean wasCancelled;
+            byte tag = decoder.readByte();
+            switch (tag) {
+                case 0:
+                    return new Success(null);
+                case 1:
+                    return new Success(BuildActionResult.of(new SerializedPayload(null, Collections.<byte[]>emptyList())));
+                case 2:
+                    SerializedPayload result = payloadSerializer.read(decoder);
+                    return new Success(BuildActionResult.of(result));
+                case 3:
+                    wasCancelled = decoder.readBoolean();
+                    SerializedPayload failure = payloadSerializer.read(decoder);
+                    return new Success(BuildActionResult.failed(wasCancelled, failure, null));
+                case 4:
+                    wasCancelled = decoder.readBoolean();
+                    RuntimeException exception = (RuntimeException) javaSerializer.read(decoder);
+                    return new Success(BuildActionResult.failed(wasCancelled, null, exception));
+                case 5:
+                    return new Success(javaSerializer.read(decoder));
+                default:
+                    throw new IllegalArgumentException("Unexpected payload type.");
             }
         }
     }
@@ -210,6 +258,7 @@ public class DaemonMessageSerializer {
             encoder.writeLong(build.getIdentifier().getLeastSignificantBits());
             encoder.writeBinary(build.getToken());
             encoder.writeLong(build.getStartTime());
+            encoder.writeBoolean(build.isInteractive());
             buildActionSerializer.write(encoder, build.getAction());
             GradleLauncherMetaData metaData = (GradleLauncherMetaData) build.getBuildClientMetaData();
             encoder.writeString(metaData.getAppName());
@@ -221,10 +270,11 @@ public class DaemonMessageSerializer {
             UUID uuid = new UUID(decoder.readLong(), decoder.readLong());
             byte[] token = decoder.readBinary();
             long timestamp = decoder.readLong();
+            boolean interactive = decoder.readBoolean();
             BuildAction buildAction = buildActionSerializer.read(decoder);
             GradleLauncherMetaData metaData = new GradleLauncherMetaData(decoder.readString());
             BuildActionParameters buildActionParameters = buildActionParametersSerializer.read(decoder);
-            return new Build(uuid, token, buildAction, metaData, timestamp, buildActionParameters);
+            return new Build(uuid, token, buildAction, metaData, timestamp, interactive, buildActionParameters);
         }
     }
 
@@ -245,7 +295,6 @@ public class DaemonMessageSerializer {
             logLevelSerializer.write(encoder, parameters.getLogLevel());
             encoder.writeBoolean(parameters.isUseDaemon()); // Can probably skip this
             encoder.writeBoolean(parameters.isContinuous());
-            encoder.writeBoolean(parameters.isInteractive());
             classPathSerializer.write(encoder, parameters.getInjectedPluginClasspath().getAsFiles());
         }
 
@@ -257,9 +306,8 @@ public class DaemonMessageSerializer {
             LogLevel logLevel = logLevelSerializer.read(decoder);
             boolean useDaemon = decoder.readBoolean();
             boolean continuous = decoder.readBoolean();
-            boolean interactive = decoder.readBoolean();
             ClassPath classPath = DefaultClassPath.of(classPathSerializer.read(decoder));
-            return new DefaultBuildActionParameters(sysProperties, envVariables, currentDir, logLevel, useDaemon, continuous, interactive, classPath);
+            return new DefaultBuildActionParameters(sysProperties, envVariables, currentDir, logLevel, useDaemon, continuous, classPath);
         }
     }
 

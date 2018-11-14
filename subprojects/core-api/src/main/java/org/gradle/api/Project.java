@@ -35,11 +35,11 @@ import org.gradle.api.invocation.Gradle;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.LoggingManager;
 import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.platform.TargetMachineFactory;
 import org.gradle.api.plugins.Convention;
 import org.gradle.api.plugins.ExtensionAware;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.PluginAware;
-import org.gradle.api.provider.PropertyState;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.resources.ResourceHandler;
@@ -519,6 +519,22 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
     Task task(String name, Closure configureClosure);
 
     /**
+     * <p>Creates a {@link Task} with the given name and adds it to this project. Before the task is returned, the given
+     * action is executed to configure the task.</p> <p>After the task is added to the project, it is made
+     * available as a property of the project, so that you can reference the task by name in your build file.  See <a
+     * href="#properties">here</a> for more details</p>
+     *
+     * @param name The name of the task to be created
+     * @param configureAction The action to use to configure the created task.
+     * @return The newly created task object
+     * @throws InvalidUserDataException If a task with the given name already exists in this project.
+     * @see TaskContainer#create(String, Action)
+     * @since 4.10
+     */
+    @Incubating
+    Task task(String name, Action<? super Task> configureAction);
+
+    /**
      * <p>Returns the path of this project.  The path is the fully qualified name of the project.</p>
      *
      * @return The path. Never returns null.
@@ -616,7 +632,10 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
     Map<Project, Set<Task>> getAllTasks(boolean recursive);
 
     /**
-     * <p>Returns the set of tasks with the given name contained in this project, and optionally its subprojects.</p>
+     * <p>Returns the set of tasks with the given name contained in this project, and optionally its subprojects.
+     *
+     * <b>NOTE:</b> This is an expensive operation since it requires all projects to be configured.
+     * </p>
      *
      * @param name The name of the task to locate.
      * @param recursive If true, returns the tasks of this project and its subprojects. If false, returns the tasks of
@@ -938,20 +957,6 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
     <T> Provider<T> provider(Callable<T> value);
 
     /**
-     * Creates a {@code PropertyState} implementation based on the provided class.
-     *
-     * @param clazz The class to be used for property state.
-     * @return The property state. Never returns null.
-     * @throws org.gradle.api.InvalidUserDataException If the provided class is null.
-     * @see org.gradle.api.provider.ProviderFactory#property(Class)
-     * @since 4.0
-     * @deprecated Use {@link ObjectFactory#property(Class)} instead.
-     */
-    @Incubating
-    @Deprecated
-    <T> PropertyState<T> property(Class<T> clazz);
-
-    /**
      * Provides access to methods to create various kinds of {@link Provider} instances.
      *
      * @since 4.0
@@ -974,6 +979,14 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
      */
     @Incubating
     ProjectLayout getLayout();
+
+    /**
+     * Returns a factory for configuring target machines.
+     *
+     * @since 5.1
+     */
+    @Incubating
+    TargetMachineFactory getMachines();
 
     /**
      * Creates a directory and returns a file pointing to it.
@@ -1717,7 +1730,6 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
      *
      * @return The components for this project.
      */
-    @Incubating
     SoftwareComponentContainer getComponents();
 
     /**
@@ -1725,7 +1737,6 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
      *
      * @since 4.0
      */
-    @Incubating
     InputNormalizationHandler getNormalization();
 
     /**
@@ -1733,7 +1744,6 @@ public interface Project extends Comparable<Project>, ExtensionAware, PluginAwar
      *
      * @since 4.0
      */
-    @Incubating
     void normalization(Action<? super InputNormalizationHandler> configuration);
 
     /**

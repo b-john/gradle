@@ -30,6 +30,8 @@ import org.gradle.util.Configurable;
  *
  * @param <T> The type of domain objects in this container.
  * @see NamedDomainObjectSet
+ * @see Project#container(Class) Creating a container.
+ * @see Project#container(Class, NamedDomainObjectFactory) Creating a container with a custom factory.
  */
 public interface NamedDomainObjectContainer<T> extends NamedDomainObjectSet<T>, Configurable<NamedDomainObjectContainer<T>> {
 
@@ -92,7 +94,7 @@ public interface NamedDomainObjectContainer<T> extends NamedDomainObjectSet<T>, 
      * @since 4.10
      */
     @Incubating
-    DomainObjectProvider<T> register(String name, Action<? super T> configurationAction) throws InvalidUserDataException;
+    NamedDomainObjectProvider<T> register(String name, Action<? super T> configurationAction) throws InvalidUserDataException;
 
     /**
      * Defines a new object, which will be created when it is required. A object is 'required' when the object is located using query methods such as {@link NamedDomainObjectCollection#getByName(java.lang.String)} or when {@link Provider#get()} is called on the return value of this method.
@@ -105,5 +107,5 @@ public interface NamedDomainObjectContainer<T> extends NamedDomainObjectSet<T>, 
      * @since 4.10
      */
     @Incubating
-    DomainObjectProvider<T> register(String name) throws InvalidUserDataException;
+    NamedDomainObjectProvider<T> register(String name) throws InvalidUserDataException;
 }

@@ -17,15 +17,18 @@
 package org.gradle.caching.internal.tasks;
 
 import org.gradle.api.internal.TaskInternal;
-import org.gradle.api.internal.changedetection.state.CurrentTaskExecution;
-import org.gradle.api.internal.changedetection.state.ValueSnapshot;
-import org.gradle.caching.internal.DefaultBuildCacheHasher;
+import org.gradle.api.internal.tasks.CacheableTaskOutputFilePropertySpec;
+import org.gradle.api.internal.tasks.TaskOutputFilePropertySpec;
+import org.gradle.api.internal.tasks.execution.TaskProperties;
+import org.gradle.internal.execution.history.BeforeExecutionState;
 import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
 import org.gradle.internal.hash.HashCode;
+import org.gradle.internal.hash.Hasher;
+import org.gradle.internal.hash.Hashing;
+import org.gradle.internal.snapshot.ValueSnapshot;
 
 import java.util.Map;
 import java.util.SortedMap;
-import java.util.SortedSet;
 
 public class TaskCacheKeyCalculator {
 
@@ -35,34 +38,38 @@ public class TaskCacheKeyCalculator {
         this.buildCacheDebugLogging = buildCacheDebugLogging;
     }
 
-    public TaskOutputCachingBuildCacheKey calculate(TaskInternal task, CurrentTaskExecution execution) {
+    public TaskOutputCachingBuildCacheKey calculate(TaskInternal task, BeforeExecutionState execution, TaskProperties taskProperties) {
         TaskOutputCachingBuildCacheKeyBuilder builder = new DefaultTaskOutputCachingBuildCacheKeyBuilder(task.getIdentityPath());
         if (buildCacheDebugLogging) {
             builder = new DebuggingTaskOutputCachingBuildCacheKeyBuilder(builder);
         }
-        builder.appendTaskImplementation(execution.getTaskImplementation());
-        builder.appendTaskActionImplementations(execution.getTaskActionImplementations());
+        builder.appendTaskImplementation(execution.getImplementation());
+        builder.appendTaskActionImplementations(execution.getAdditionalImplementations());
 
         SortedMap<String, ValueSnapshot> inputProperties = execution.getInputProperties();
         for (Map.Entry<String, ValueSnapshot> entry : inputProperties.entrySet()) {
-            DefaultBuildCacheHasher newHasher = new DefaultBuildCacheHasher();
+            Hasher newHasher = Hashing.newHasher();
             entry.getValue().appendToHasher(newHasher);
             if (newHasher.isValid()) {
                 HashCode hash = newHasher.hash();
                 builder.appendInputValuePropertyHash(entry.getKey(), hash);
             } else {
-                builder.inputPropertyLoadedByUnknownClassLoader(entry.getKey());
+                builder.inputPropertyNotCacheable(entry.getKey(), newHasher.getInvalidReason());
             }
         }
 
-        SortedMap<String, CurrentFileCollectionFingerprint> inputFingerprints = execution.getInputFingerprints();
+        SortedMap<String, CurrentFileCollectionFingerprint> inputFingerprints = execution.getInputFileProperties();
         for (Map.Entry<String, CurrentFileCollectionFingerprint> entry : inputFingerprints.entrySet()) {
             builder.appendInputFilesProperty(entry.getKey(), entry.getValue());
         }
 
-        SortedSet<String> outputPropertyNamesForCacheKey = execution.getOutputPropertyNamesForCacheKey();
-        for (String cacheableOutputPropertyName : outputPropertyNamesForCacheKey) {
-            builder.appendOutputPropertyName(cacheableOutputPropertyName);
+        for (TaskOutputFilePropertySpec propertySpec : taskProperties.getOutputFileProperties()) {
+            if (!(propertySpec instanceof CacheableTaskOutputFilePropertySpec)) {
+                continue;
+            }
+            if (((CacheableTaskOutputFilePropertySpec) propertySpec).getOutputFile() != null) {
+                builder.appendOutputPropertyName(propertySpec.getPropertyName());
+            }
         }
 
         return builder.build();

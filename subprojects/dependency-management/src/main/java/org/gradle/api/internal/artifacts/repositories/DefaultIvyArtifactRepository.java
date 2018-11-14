@@ -26,6 +26,7 @@ import org.gradle.api.artifacts.ComponentMetadataSupplierDetails;
 import org.gradle.api.artifacts.repositories.AuthenticationContainer;
 import org.gradle.api.artifacts.repositories.IvyArtifactRepository;
 import org.gradle.api.artifacts.repositories.IvyArtifactRepositoryMetaDataProvider;
+import org.gradle.api.artifacts.repositories.IvyPatternRepositoryLayout;
 import org.gradle.api.artifacts.repositories.RepositoryLayout;
 import org.gradle.api.internal.FeaturePreviews;
 import org.gradle.api.internal.InstantiatorFactory;
@@ -58,18 +59,19 @@ import org.gradle.api.internal.artifacts.repositories.resolver.IvyResolver;
 import org.gradle.api.internal.artifacts.repositories.resolver.PatternBasedResolver;
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransport;
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory;
-import org.gradle.api.internal.changedetection.state.isolation.IsolatableFactory;
 import org.gradle.api.internal.file.FileResolver;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.internal.action.InstantiatingAction;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactIdentifier;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactMetadata;
 import org.gradle.internal.component.external.model.ivy.MutableIvyModuleResolveMetadata;
+import org.gradle.internal.isolation.IsolatableFactory;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.resource.local.FileResourceRepository;
 import org.gradle.internal.resource.local.FileStore;
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder;
 import org.gradle.util.ConfigureUtil;
+import org.gradle.util.DeprecationLogger;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -81,6 +83,7 @@ import static org.gradle.api.internal.FeaturePreviews.Feature.GRADLE_METADATA;
 
 public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupportedRepository implements IvyArtifactRepository, ResolutionAwareRepository, PublicationAwareRepository {
     private Object baseUrl;
+    private Set<String> schemes = null;
     private AbstractRepositoryLayout layout;
     private final AdditionalPatternsRepositoryLayout additionalPatternsLayout;
     private final FileResolver fileResolver;
@@ -152,6 +155,9 @@ public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupporte
 
     @Override
     protected RepositoryDescriptor createDescriptor() {
+        Set<String> schemes = getSchemes();
+        validate(schemes);
+
         String layoutType;
         boolean m2Compatible;
         if (layout instanceof GradleRepositoryLayout) {
@@ -183,14 +189,11 @@ public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupporte
     }
 
     private IvyResolver createRealResolver() {
-        URI uri = getUrl();
-
-        Set<String> schemes = new LinkedHashSet<String>();
-        layout.addSchemes(uri, schemes);
-        additionalPatternsLayout.addSchemes(uri, schemes);
+        Set<String> schemes = getSchemes();
+        validate(schemes);
 
         IvyResolver resolver = createResolver(schemes);
-
+        URI uri = getUrl();
         layout.apply(uri, resolver);
         additionalPatternsLayout.apply(uri, resolver);
 
@@ -198,10 +201,23 @@ public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupporte
     }
 
     private IvyResolver createResolver(Set<String> schemes) {
+        return createResolver(transportFactory.createTransport(schemes, getName(), getConfiguredAuthentication()));
+    }
+
+    private void validate(Set<String> schemes) {
         if (schemes.isEmpty()) {
             throw new InvalidUserDataException("You must specify a base url or at least one artifact pattern for an Ivy repository.");
         }
-        return createResolver(transportFactory.createTransport(schemes, getName(), getConfiguredAuthentication()));
+    }
+
+    private Set<String> getSchemes() {
+        if (schemes == null) {
+            URI uri = getUrl();
+            schemes = new LinkedHashSet<>();
+            layout.addSchemes(uri, schemes);
+            additionalPatternsLayout.addSchemes(uri, schemes);
+        }
+        return schemes;
     }
 
     private IvyResolver createResolver(RepositoryTransport transport) {
@@ -280,13 +296,26 @@ public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupporte
 
     @Override
     public void layout(String layoutName, Closure config) {
-        layout(layoutName, ConfigureUtil.<RepositoryLayout>configureUsing(config));
+        DeprecationLogger.nagUserOfReplacedMethod("IvyArtifactRepository.layout(String, Closure)", "IvyArtifactRepository.patternLayout(Action)");
+        internalLayout(layoutName, ConfigureUtil.<RepositoryLayout>configureUsing(config));
     }
 
     @Override
     public void layout(String layoutName, Action<? extends RepositoryLayout> config) {
+        DeprecationLogger.nagUserOfReplacedMethod("IvyArtifactRepository.layout(String, Action)", "IvyArtifactRepository.patternLayout(Action)");
+        internalLayout(layoutName, config);
+    }
+
+    private void internalLayout(String layoutName, Action config) {
         layout(layoutName);
-        ((Action) config).execute(layout);
+        config.execute(layout);
+    }
+
+    @Override
+    public void patternLayout(Action<? super IvyPatternRepositoryLayout> config) {
+        DefaultIvyPatternRepositoryLayout layout = instantiator.newInstance(DefaultIvyPatternRepositoryLayout.class);
+        this.layout = layout;
+        config.execute(layout);
     }
 
     public IvyArtifactRepositoryMetaDataProvider getResolve() {

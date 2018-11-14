@@ -40,25 +40,30 @@ import org.gradle.launcher.daemon.client.DaemonClientFactory;
 import org.gradle.launcher.daemon.configuration.DaemonParameters;
 import org.gradle.launcher.exec.BuildActionExecuter;
 import org.gradle.launcher.exec.BuildActionParameters;
+import org.gradle.launcher.exec.BuildActionResult;
 import org.gradle.process.internal.streams.SafeStreams;
 import org.gradle.tooling.internal.build.DefaultBuildEnvironment;
 import org.gradle.tooling.internal.consumer.parameters.FailsafeBuildProgressListenerAdapter;
-import org.gradle.tooling.internal.consumer.versioning.ModelMapping;
 import org.gradle.tooling.internal.gradle.DefaultBuildIdentifier;
-import org.gradle.tooling.internal.protocol.PhasedActionResultListener;
+import org.gradle.tooling.internal.protocol.BuildExceptionVersion1;
 import org.gradle.tooling.internal.protocol.InternalBuildAction;
+import org.gradle.tooling.internal.protocol.InternalBuildActionFailureException;
 import org.gradle.tooling.internal.protocol.InternalBuildActionVersion2;
-import org.gradle.tooling.internal.protocol.InternalBuildEnvironment;
+import org.gradle.tooling.internal.protocol.InternalBuildCancelledException;
 import org.gradle.tooling.internal.protocol.InternalBuildProgressListener;
 import org.gradle.tooling.internal.protocol.InternalPhasedAction;
+import org.gradle.tooling.internal.protocol.InternalUnsupportedModelException;
 import org.gradle.tooling.internal.protocol.ModelIdentifier;
+import org.gradle.tooling.internal.protocol.PhasedActionResultListener;
 import org.gradle.tooling.internal.protocol.events.InternalProgressEvent;
+import org.gradle.tooling.internal.protocol.test.InternalTestExecutionException;
 import org.gradle.tooling.internal.provider.connection.ProviderConnectionParameters;
 import org.gradle.tooling.internal.provider.connection.ProviderOperationParameters;
 import org.gradle.tooling.internal.provider.serialization.PayloadSerializer;
 import org.gradle.tooling.internal.provider.serialization.SerializedPayload;
 import org.gradle.tooling.internal.provider.test.ProviderInternalTestExecutionRequest;
 import org.gradle.tooling.model.UnsupportedMethodException;
+import org.gradle.tooling.model.build.BuildEnvironment;
 import org.gradle.util.GradleVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,8 +109,7 @@ public class ProviderConnection {
             throw new IllegalArgumentException("No model type or tasks specified.");
         }
         Parameters params = initParams(providerParameters);
-        Class<?> type = new ModelMapping().getProtocolTypeFromModelName(modelName);
-        if (type == InternalBuildEnvironment.class) {
+        if (BuildEnvironment.class.getName().equals(modelName)) {
             //we don't really need to launch the daemon to acquire information needed for BuildEnvironment
             if (tasks != null) {
                 throw new IllegalArgumentException("Cannot run tasks and fetch the build environment model.");
@@ -155,7 +159,7 @@ public class ProviderConnection {
         BuildAction action = new ClientProvidedPhasedAction(startParameter, serializedAction, tasks != null, listenerConfig.clientSubscriptions);
         try {
             return run(action, cancellationToken, listenerConfig, new PhasedActionEventConsumer(failsafePhasedActionResultListener, payloadSerializer, listenerConfig.buildEventConsumer),
-                providerParameters, params);
+                    providerParameters, params);
         } finally {
             failsafePhasedActionResultListener.rethrowErrors();
         }
@@ -176,15 +180,38 @@ public class ProviderConnection {
                        Parameters parameters) {
         try {
             BuildActionExecuter<ProviderOperationParameters> executer = createExecuter(providerParameters, parameters);
-            BuildRequestContext buildRequestContext = new DefaultBuildRequestContext(new DefaultBuildRequestMetaData(providerParameters.getStartTime()), cancellationToken, buildEventConsumer);
-            BuildActionResult result = (BuildActionResult) executer.execute(action, buildRequestContext, providerParameters, sharedServices);
-            if (result.failure != null) {
-                throw (RuntimeException) payloadSerializer.deserialize(result.failure);
-            }
-            return payloadSerializer.deserialize(result.result);
+            boolean interactive = providerParameters.getStandardInput() != null;
+            BuildRequestContext buildRequestContext = new DefaultBuildRequestContext(new DefaultBuildRequestMetaData(providerParameters.getStartTime(), interactive), cancellationToken, buildEventConsumer);
+            BuildActionResult result = executer.execute(action, buildRequestContext, providerParameters, sharedServices);
+            throwFailure(result);
+            return payloadSerializer.deserialize(result.getResult());
         } finally {
             progressListenerConfiguration.failsafeWrapper.rethrowErrors();
         }
+    }
+
+    private void throwFailure(BuildActionResult result) {
+        if (result.getException() != null) {
+            throw map(result, result.getException());
+        }
+        if (result.getFailure() != null) {
+            throw map(result, (RuntimeException) payloadSerializer.deserialize(result.getFailure()));
+        }
+    }
+
+    private RuntimeException map(BuildActionResult result, RuntimeException exception) {
+        // Wrap build failure in 'cancelled' cross version exception
+        if (result.wasCancelled()) {
+            throw new InternalBuildCancelledException(exception);
+        }
+
+        // Forward special cases directly to consumer
+        if (exception instanceof InternalTestExecutionException || exception instanceof InternalBuildActionFailureException || exception instanceof InternalUnsupportedModelException) {
+            return exception;
+        }
+
+        // Wrap in generic 'build failed' cross version exception
+        throw new BuildExceptionVersion1(exception);
     }
 
     private BuildActionExecuter<ProviderOperationParameters> createExecuter(ProviderOperationParameters operationParameters, Parameters params) {

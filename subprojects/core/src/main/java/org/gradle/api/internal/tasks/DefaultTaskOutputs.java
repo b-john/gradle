@@ -23,15 +23,11 @@ import org.gradle.api.NonNullApi;
 import org.gradle.api.Task;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.FilePropertyContainer;
-import org.gradle.api.internal.OverlappingOutputs;
-import org.gradle.api.internal.TaskExecutionHistory;
 import org.gradle.api.internal.TaskInternal;
-import org.gradle.api.internal.TaskOutputCachingState;
 import org.gradle.api.internal.TaskOutputsInternal;
 import org.gradle.api.internal.file.CompositeFileCollection;
 import org.gradle.api.internal.file.collections.FileCollectionResolveContext;
 import org.gradle.api.internal.tasks.execution.SelfDescribingSpec;
-import org.gradle.api.internal.tasks.execution.TaskProperties;
 import org.gradle.api.internal.tasks.properties.GetOutputFilesVisitor;
 import org.gradle.api.internal.tasks.properties.PropertyVisitor;
 import org.gradle.api.internal.tasks.properties.PropertyWalker;
@@ -46,22 +42,15 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
-import static org.gradle.api.internal.tasks.TaskOutputCachingDisabledReasonCategory.*;
-
 @NonNullApi
 public class DefaultTaskOutputs implements TaskOutputsInternal {
-    private static final TaskOutputCachingState ENABLED = DefaultTaskOutputCachingState.enabled();
-    public static final TaskOutputCachingState DISABLED = DefaultTaskOutputCachingState.disabled(BUILD_CACHE_DISABLED, "Task output caching is disabled");
-    private static final TaskOutputCachingState CACHING_NOT_ENABLED = DefaultTaskOutputCachingState.disabled(TaskOutputCachingDisabledReasonCategory.NOT_ENABLED_FOR_TASK, "Caching has not been enabled for the task");
-    private static final TaskOutputCachingState NO_OUTPUTS_DECLARED = DefaultTaskOutputCachingState.disabled(TaskOutputCachingDisabledReasonCategory.NO_OUTPUTS_DECLARED, "No outputs declared");
-
     private final FileCollection allOutputFiles;
     private final PropertyWalker propertyWalker;
     private final PropertySpecFactory specFactory;
     private AndSpec<TaskInternal> upToDateSpec = AndSpec.empty();
     private List<SelfDescribingSpec<TaskInternal>> cacheIfSpecs = new LinkedList<SelfDescribingSpec<TaskInternal>>();
     private List<SelfDescribingSpec<TaskInternal>> doNotCacheIfSpecs = new LinkedList<SelfDescribingSpec<TaskInternal>>();
-    private TaskExecutionHistory history;
+    private FileCollection previousOutputFiles;
     private final FilePropertyContainer<DeclaredTaskOutputFileProperty> registeredFileProperties = FilePropertyContainer.create();
     private final TaskInternal task;
     private final TaskMutator taskMutator;
@@ -105,60 +94,6 @@ public class DefaultTaskOutputs implements TaskOutputsInternal {
     }
 
     @Override
-    public TaskOutputCachingState getCachingState(TaskProperties taskProperties) {
-        if (cacheIfSpecs.isEmpty()) {
-            return CACHING_NOT_ENABLED;
-        }
-
-        if (!taskProperties.hasDeclaredOutputs()) {
-            return NO_OUTPUTS_DECLARED;
-        }
-
-        OverlappingOutputs overlappingOutputs = getOverlappingOutputs();
-        if (overlappingOutputs != null) {
-            String relativePath = task.getProject().relativePath(overlappingOutputs.getOverlappedFilePath());
-            return DefaultTaskOutputCachingState.disabled(TaskOutputCachingDisabledReasonCategory.OVERLAPPING_OUTPUTS,
-                String.format("Gradle does not know how file '%s' was created (output property '%s'). Task output caching requires exclusive access to output paths to guarantee correctness.",
-                    relativePath, overlappingOutputs.getPropertyName()));
-        }
-
-        for (TaskPropertySpec spec : taskProperties.getOutputFileProperties()) {
-            if (spec instanceof NonCacheableTaskOutputPropertySpec) {
-                return DefaultTaskOutputCachingState.disabled(
-                    PLURAL_OUTPUTS,
-                    "Declares multiple output files for the single output property '"
-                        + ((NonCacheableTaskOutputPropertySpec) spec).getOriginalPropertyName()
-                        + "' via `@OutputFiles`, `@OutputDirectories` or `TaskOutputs.files()`"
-                );
-            }
-        }
-
-        for (SelfDescribingSpec<TaskInternal> selfDescribingSpec : cacheIfSpecs) {
-            if (!selfDescribingSpec.isSatisfiedBy(task)) {
-                return DefaultTaskOutputCachingState.disabled(
-                    CACHE_IF_SPEC_NOT_SATISFIED,
-                    "'" + selfDescribingSpec.getDisplayName() + "' not satisfied"
-                );
-            }
-        }
-
-        for (SelfDescribingSpec<TaskInternal> selfDescribingSpec : doNotCacheIfSpecs) {
-            if (selfDescribingSpec.isSatisfiedBy(task)) {
-                return DefaultTaskOutputCachingState.disabled(
-                    DO_NOT_CACHE_IF_SPEC_SATISFIED,
-                    "'" + selfDescribingSpec.getDisplayName() + "' satisfied"
-                );
-            }
-        }
-        return ENABLED;
-    }
-
-    @Nullable
-    private OverlappingOutputs getOverlappingOutputs() {
-        return history != null ? history.getOverlappingOutputs() : null;
-    }
-
-    @Override
     public void cacheIf(final Spec<? super Task> spec) {
         cacheIf("Task outputs cacheable", spec);
     }
@@ -179,6 +114,16 @@ public class DefaultTaskOutputs implements TaskOutputsInternal {
                 doNotCacheIfSpecs.add(new SelfDescribingSpec<TaskInternal>(spec, cachingDisabledReason));
             }
         });
+    }
+
+    @Override
+    public List<SelfDescribingSpec<TaskInternal>> getCacheIfSpecs() {
+        return cacheIfSpecs;
+    }
+
+    @Override
+    public List<SelfDescribingSpec<TaskInternal>> getDoNotCacheIfSpecs() {
+        return doNotCacheIfSpecs;
     }
 
     @Override
@@ -208,6 +153,7 @@ public class DefaultTaskOutputs implements TaskOutputsInternal {
             @Override
             public TaskOutputFilePropertyBuilder call() {
                 StaticValue value = new StaticValue(path);
+                value.attachProducer(task);
                 DeclaredTaskOutputFileProperty outputFileSpec = specFactory.createOutputFileSpec(value);
                 registeredFileProperties.add(outputFileSpec);
                 return outputFileSpec;
@@ -221,6 +167,7 @@ public class DefaultTaskOutputs implements TaskOutputsInternal {
             @Override
             public TaskOutputFilePropertyBuilder call() {
                 StaticValue value = new StaticValue(path);
+                value.attachProducer(task);
                 DeclaredTaskOutputFileProperty outputDirSpec = specFactory.createOutputDirSpec(value);
                 registeredFileProperties.add(outputDirSpec);
                 return outputDirSpec;
@@ -260,16 +207,16 @@ public class DefaultTaskOutputs implements TaskOutputsInternal {
     }
 
     @Override
-    public Set<File> getPreviousOutputFiles() {
-        if (history == null) {
-            throw new IllegalStateException("Task history is currently not available for this task.");
-        }
-        return history.getOutputFiles();
+    public void setPreviousOutputFiles(FileCollection previousOutputFiles) {
+        this.previousOutputFiles = previousOutputFiles;
     }
 
     @Override
-    public void setHistory(@Nullable TaskExecutionHistory history) {
-        this.history = history;
+    public Set<File> getPreviousOutputFiles() {
+        if (previousOutputFiles == null) {
+            throw new IllegalStateException("Task history is currently not available for this task.");
+        }
+        return previousOutputFiles.getFiles();
     }
 
     private static class HasDeclaredOutputsVisitor extends PropertyVisitor.Adapter {
@@ -310,5 +257,4 @@ public class DefaultTaskOutputs implements TaskOutputsInternal {
             super.visitDependencies(context);
         }
     }
-
 }

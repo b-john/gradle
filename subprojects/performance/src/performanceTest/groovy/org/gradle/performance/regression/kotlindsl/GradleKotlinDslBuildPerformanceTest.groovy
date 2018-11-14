@@ -29,7 +29,7 @@ class GradleKotlinDslBuildPerformanceTest extends AbstractCrossVersionPerformanc
         runner.testProject = testProject
         runner.tasksToRun = ['help']
         runner.gradleOpts = ["-Xms512m", "-Xmx512m"]
-        runner.targetVersions = ["4.10-20180725235906+0000"]
+        runner.targetVersions = ["5.1-20181023100041+0000"]
 
         when:
         def result = runner.run()
@@ -48,9 +48,8 @@ class GradleKotlinDslBuildPerformanceTest extends AbstractCrossVersionPerformanc
         given:
         runner.testProject = testProject
         runner.tasksToRun = ['help']
-        runner.args = ['--recompile-scripts']
         runner.gradleOpts = ["-Xms512m", "-Xmx512m"]
-        runner.targetVersions = ["4.10-20180725235906+0000"]
+        runner.targetVersions = ["5.1-20181023100041+0000"]
 
         when:
         def result = runner.run()
